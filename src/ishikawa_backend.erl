@@ -42,7 +42,8 @@
 
 -include("ishikawa.hrl").
 
--record(state, {actor :: actor()}).
+-record(state, {actor :: actor(),
+                vv :: timestamp()}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -87,7 +88,9 @@ init([]) ->
     %% Generate actor identifier.
     Actor = gen_actor(),
 
-    {ok, #state{actor=Actor}}.
+    %% Generate local version vector.
+
+    {ok, #state{actor=Actor, vv=vclock:fresh()}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
