@@ -58,7 +58,7 @@ init([]) ->
                  permanent, infinity, supervisor, [partisan_sup]},
 
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children ++ [Partisan]}}.
+    {ok, {RestartStrategy, [Partisan] ++ Children}}.
 
 %%%===================================================================
 %%% Internal functions

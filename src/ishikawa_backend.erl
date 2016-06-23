@@ -25,7 +25,8 @@
 -behaviour(trcb).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         update/1]).
 
 %% trcb callbacks
 -export([tcbcast/1,
@@ -42,8 +43,11 @@
 
 -include("ishikawa.hrl").
 
+-define(PEER_SERVICE, partisan_peer_service).
+
 -record(state, {actor :: actor(),
-                vv :: timestamp()}).
+                vv :: timestamp(),
+                members :: [term()]}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -73,6 +77,12 @@ tcbstable(Timestamp) ->
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+%% @doc Update membership.
+-spec update(term()) -> ok.
+update(State) ->
+    Members = ?PEER_SERVICE:decode(State),
+    gen_server:cast(?MODULE, {membership, Members}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -89,8 +99,16 @@ init([]) ->
     Actor = gen_actor(),
 
     %% Generate local version vector.
+    VClock = vclock:fresh(),
 
-    {ok, #state{actor=Actor, vv=vclock:fresh()}}.
+    %% Add membership callback.
+    ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
+
+    %% Add initial members.
+    {ok, Members} = ?PEER_SERVICE:members(),
+    lager:info("Initial membership: ~p", [Members]),
+
+    {ok, #state{actor=Actor, vv=VClock, members=Members}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -110,6 +128,8 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+handle_cast({membership, Members}, State) ->
+    {noreply, State#state{members=Members}};
 handle_cast(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
