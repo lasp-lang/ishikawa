@@ -41,5 +41,32 @@ init([]) ->
                  ?CHILD(ishikawa_backend, worker)
                  ]),
 
+    %% Before initializing the partisan backend, be sure to configure it
+    %% to use the proper ports.
+    %%
+    case os:getenv("PEER_PORT", "false") of
+        "false" ->
+            partisan_config:set(peer_port, random_port()),
+            ok;
+        PeerPort ->
+            partisan_config:set(peer_port, list_to_integer(PeerPort)),
+            ok
+    end,
+
+    Partisan = {partisan_sup,
+                {partisan_sup, start_link, []},
+                 permanent, infinity, supervisor, [partisan_sup]},
+
     RestartStrategy = {one_for_one, 10, 10},
-    {ok, {RestartStrategy, Children}}.
+    {ok, {RestartStrategy, Children ++ [Partisan]}}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% @private
+random_port() ->
+    {ok, Socket} = gen_tcp:listen(0, []),
+    {ok, {_, Port}} = inet:sockname(Socket),
+    ok = gen_tcp:close(Socket),
+    Port.
