@@ -1,0 +1,18 @@
+{application, ishikawa,
+ [
+  {description, "Tagged reliable causal broadcast."},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {included_applications,[]},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  crypto,
+                  lager,
+                  time_compat
+                 ]},
+  {mod, {ishikawa_app, []}},
+  {modules, []},
+  {env, [
+         {ishikawa, "data"}]}
+ ]}.
