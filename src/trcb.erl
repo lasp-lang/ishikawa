@@ -30,4 +30,4 @@
 -callback tcbdeliver(message(), timestamp()) -> ok.
 
 %% Determine if a timestamp is stable.
--callback tcbstable(timestamp()) -> boolean().
+-callback tcbstable(timestamp()) -> {ok, boolean()}.

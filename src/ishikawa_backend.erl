@@ -59,7 +59,7 @@ tcbdeliver(Message, Timestamp) ->
     gen_server:call(?MODULE, {tcbdeliver, Message, Timestamp}, infinity).
 
 %% Determine if a timestamp is stable.
--spec tcbstable(timestamp()) -> boolean().
+-spec tcbstable(timestamp()) -> {ok, boolean()}.
 tcbstable(Timestamp) ->
     gen_server:call(?MODULE, {tcbstable, Timestamp}, infinity).
 
@@ -84,6 +84,7 @@ init([]) ->
                 erlang:monotonic_time(),
                 erlang:unique_integer()),
 
+    %% Generate actor identifier.
     Actor = gen_actor(),
 
     {ok, #state{actor=Actor}}.
@@ -91,6 +92,15 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+handle_call({tcbcast, _Message}, _From, State) ->
+    %% TODO: Implement me.
+    {reply, ok, State};
+handle_call({tcbdeliver, _Message, _Timestamp}, _From, State) ->
+    %% TODO: Implement me.
+    {reply, ok, State};
+handle_call({tcbstable, _Timestamp}, _From, State) ->
+    %% TODO: Implement me.
+    {reply, {ok, false}, State};
 handle_call(Msg, _From, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {reply, ok, State}.
