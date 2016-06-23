@@ -22,9 +22,15 @@
 -author("Christopher S. Meiklejohn <christopher.meiklejohn@gmail.com>").
 
 -behaviour(gen_server).
+-behaviour(trcb).
 
 %% API
 -export([start_link/0]).
+
+%% trcb callbacks
+-export([tcbcast/1,
+         tcbdeliver/2,
+         tcbstable/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -36,7 +42,26 @@
 
 -include("ishikawa.hrl").
 
--record(state, {actor :: binary()}).
+-record(state, {actor :: actor()}).
+
+%%%===================================================================
+%%% trcb callbacks
+%%%===================================================================
+
+%% Broadcast message.
+-spec tcbcast(message()) -> ok.
+tcbcast(Message) ->
+    gen_server:call(?MODULE, {tcbcast, Message}, infinity).
+
+%% Deliver a message.
+-spec tcbdeliver(message(), timestamp()) -> ok.
+tcbdeliver(Message, Timestamp) ->
+    gen_server:call(?MODULE, {tcbdeliver, Message, Timestamp}, infinity).
+
+%% Determine if a timestamp is stable.
+-spec tcbstable(timestamp()) -> boolean().
+tcbstable(Timestamp) ->
+    gen_server:call(?MODULE, {tcbstable, Timestamp}, infinity).
 
 %%%===================================================================
 %%% API

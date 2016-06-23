@@ -1,0 +1,3 @@
+-type actor() :: binary().
+-type message() :: binary().
+-type timestamp() :: vclock:vclock().
