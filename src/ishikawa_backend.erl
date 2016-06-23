@@ -125,7 +125,7 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
     %% Transmit to membership.
     [send(Message, Peer) || Peer <- Members],
 
-    {reply, ok, State};
+    {reply, ok, State#state{vv=VClock}};
 handle_call({tcbdeliver, _Message, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, ok, State};
