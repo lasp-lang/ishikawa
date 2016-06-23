@@ -113,8 +113,18 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-handle_call({tcbcast, _Message}, _From, State) ->
-    %% TODO: Implement me.
+handle_call({tcbcast, Message}, _From, #state{actor=Actor,
+                                              vv=VClock0,
+                                              members=Members} = State) ->
+    %% First, increment the vector.
+    VClock = vclock:increment(Actor, VClock0),
+
+    %% Generate message.
+    Message = {tcbcast, Actor, encode(Message), VClock},
+
+    %% Transmit to membership.
+    [send(Message, Peer) || Peer <- Members],
+
     {reply, ok, State};
 handle_call({tcbdeliver, _Message, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
@@ -161,3 +171,12 @@ gen_actor() ->
     TS = integer_to_list(Unique),
     Term = Node ++ TS,
     crypto:hash(sha, Term).
+
+%% @private
+send(Msg, Peer) ->
+    PeerServiceManager = ?PEER_SERVICE:manager(),
+    PeerServiceManager:forward_message(Peer, ?MODULE, Msg).
+
+%% @private
+encode(Message) ->
+    term_to_binary(Message).
