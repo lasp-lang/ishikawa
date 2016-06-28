@@ -23,6 +23,8 @@
 
 -include("ishikawa.hrl").
 
+-export([check_causal_delivery/4]).
+
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
 
@@ -31,3 +33,19 @@
 
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
+
+-spec check_causal_delivery({message(), timestamp()}, actor(), timestamp(), [{timestamp(), message()}]) -> {timestamp(), [{timestamp(), message()}]}.
+check_causal_delivery({Msg, MsgVV}, From, VV, Queue) ->
+    case vclock:dominates(MsgVV, VV) of
+        true ->
+            NewVV = vclock:increment(From, VV),
+            case Queue == [] of
+                true ->
+                    {NewVV, []};
+                false ->
+                    [{Msg0, MsgVV0} | RestQueue] = Queue,
+                    {_, _} = check_causal_delivery({Msg0, MsgVV0}, From, NewVV, RestQueue)
+                end;
+        false ->
+            {VV, [Queue | [{Msg, MsgVV}]]}
+    end.

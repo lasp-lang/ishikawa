@@ -42,9 +42,8 @@
 -type mclock() :: [mc_entry()].
 % The timestamp is present but not used, in case a client wishes to inspect it.
 -type mc_entry() :: {mclock_node(), vclock:vclock()}.
-
 % Nodes can have any term() as a name, but they must differ from each other.
--type   mclock_node() :: term().
+-type mclock_node() :: term().
 
 % @doc Create a brand new mclock.
 -spec fresh() -> mclock().
@@ -55,7 +54,7 @@ fresh() ->
 update_rtm(RTM, MsgActor, MsgVV) ->
     lists:keyreplace(MsgActor, 1, RTM, {MsgActor, MsgVV}).
 
--spec update_stablevv(mclock:mclock()) -> vclock:vclock().
+-spec update_stablevv(mclock()) -> vclock:vclock().
 update_stablevv(RTM0) ->
     [{_, Min0} | RTM1] = RTM0,
 

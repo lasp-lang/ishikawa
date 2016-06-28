@@ -45,10 +45,6 @@
 
 -define(PEER_SERVICE, partisan_peer_service).
 
--record(state, {actor :: actor(),
-                vv :: timestamp(),
-                members :: [term()]}).
-
 %%%===================================================================
 %%% trcb callbacks
 %%%===================================================================
@@ -101,6 +97,15 @@ init([]) ->
     %% Generate local version vector.
     VClock = vclock:fresh(),
 
+    %% Generate local version vector.
+    SVV = vclock:fresh(),
+
+    %% Generate local version vector.
+    RTM = mclock:fresh(),
+
+    %% Generate local version vector.
+    ToBeDlvrdQ = [],
+
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
 
@@ -108,7 +113,7 @@ init([]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {ok, #state{actor=Actor, vv=VClock, members=Members}}.
+    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, toBeDlvrdQ=ToBeDlvrdQ}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -126,9 +131,19 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
     [send(Message, Peer) || Peer <- Members],
 
     {reply, ok, State#state{vv=VClock}};
-handle_call({tcbdeliver, _Message, _Timestamp}, _From, State) ->
-    %% TODO: Implement me.
-    {reply, ok, State};
+handle_call({tcbdeliver, Message, Timestamp}, From, #state{vv=VClock0,
+                                              rtm=RTM0,
+                                              toBeDlvrdQ=Queue0} = State) ->
+    %% Check if the message should be delivered
+    {VClock, Queue} = trcb:check_causal_delivery({Message, Timestamp}, From, VClock0, Queue0),
+
+    %% Update the Recent Timestamp Matrix
+    RTM = mclock:update_rtm(RTM0, From, Timestamp),
+
+    %% Update the Stable Version Vector
+    SVV = mclock:update_stablevv(RTM0),
+
+    {reply, ok, State#state{vv=VClock, toBeDlvrdQ=Queue, svv=SVV, rtm=RTM}};
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, {ok, false}, State};
