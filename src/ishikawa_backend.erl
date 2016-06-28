@@ -45,6 +45,13 @@
 
 -define(PEER_SERVICE, partisan_peer_service).
 
+-record(state, {actor :: actor(),
+                vv :: timestamp(),
+                members :: [term()],
+                svv :: timestamp(),
+                rtm :: timestamp_matrix(),
+                to_be_delivered_queue :: [{timestamp(), message()}]}).
+
 %%%===================================================================
 %%% trcb callbacks
 %%%===================================================================
@@ -104,7 +111,7 @@ init([]) ->
     RTM = mclock:fresh(),
 
     %% Generate local version vector.
-    ToBeDlvrdQ = [],
+    ToBeDeliveredQueue = [],
 
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
@@ -113,7 +120,7 @@ init([]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, toBeDlvrdQ=ToBeDlvrdQ}}.
+    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, to_be_delivered_queue=ToBeDeliveredQueue}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -133,7 +140,7 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
     {reply, ok, State#state{vv=VClock}};
 handle_call({tcbdeliver, Message, Timestamp}, From, #state{vv=VClock0,
                                               rtm=RTM0,
-                                              toBeDlvrdQ=Queue0} = State) ->
+                                              to_be_delivered_queue=Queue0} = State) ->
     %% Check if the message should be delivered
     {VClock, Queue} = trcb:check_causal_delivery({Message, Timestamp}, From, VClock0, Queue0),
 
@@ -141,9 +148,9 @@ handle_call({tcbdeliver, Message, Timestamp}, From, #state{vv=VClock0,
     RTM = mclock:update_rtm(RTM0, From, Timestamp),
 
     %% Update the Stable Version Vector
-    SVV = mclock:update_stablevv(RTM0),
+    SVV = mclock:update_stablevv(RTM),
 
-    {reply, ok, State#state{vv=VClock, toBeDlvrdQ=Queue, svv=SVV, rtm=RTM}};
+    {reply, ok, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, {ok, false}, State};

@@ -23,7 +23,7 @@
 
 -include("ishikawa.hrl").
 
--export([check_causal_delivery/4]).
+-export([check_causal_delivery/4, try_to_deliever/3]).
 
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
@@ -34,18 +34,29 @@
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
+%% check if a message should be deliver and deliver it, if not add itto the queue
 -spec check_causal_delivery({message(), timestamp()}, actor(), timestamp(), [{timestamp(), message()}]) -> {timestamp(), [{timestamp(), message()}]}.
 check_causal_delivery({Msg, MsgVV}, From, VV, Queue) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
             NewVV = vclock:increment(From, VV),
-            case Queue == [] of
-                true ->
-                    {NewVV, []};
-                false ->
-                    [{Msg0, MsgVV0} | RestQueue] = Queue,
-                    {_, _} = check_causal_delivery({Msg0, MsgVV0}, From, NewVV, RestQueue)
-                end;
+            %% TODO: Handle message,
+            try_to_deliever(Queue, From, {NewVV, Queue});
         false ->
             {VV, [Queue | [{Msg, MsgVV}]]}
+    end.
+
+%% Check for all messages in the queue to be delivered
+%% Called upon delievery of a new message that could affect the delivery of messages in the queue
+-spec try_to_deliever([{timestamp(), message()}], actor(), {timestamp(), [{timestamp(), message()}]}) -> {timestamp(), [{timestamp(), message()}]}.
+try_to_deliever([], _From, {VV, Queue}) -> {VV, Queue};
+try_to_deliever([{MsgVV, _Msg}=El | RQueue], From, {VV, Queue}=V) ->
+    case vclock:dominates(MsgVV, VV) of
+        true ->
+            NewVV = vclock:increment(From, VV),
+            %% TODO: Handle message,
+            Queue1 = lists:delete(El, Queue),
+            try_to_deliever(Queue1, From, {NewVV, Queue1});
+        false ->
+            try_to_deliever(RQueue, From, V)
     end.
