@@ -23,40 +23,40 @@
 
 -include("ishikawa.hrl").
 
--export([check_causal_delivery/4, try_to_deliever/3]).
+-export([check_causal_delivery/3, try_to_deliever/2]).
 
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
 
 %% Deliver a message.
--callback tcbdeliver(message(), timestamp()) -> ok.
+-callback tcbdeliver(actor(), message(), timestamp()) -> ok.
 
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
-%% check if a message should be deliver and deliver it, if not add itto the queue
--spec check_causal_delivery({message(), timestamp()}, actor(), timestamp(), [{timestamp(), message()}]) -> {timestamp(), [{timestamp(), message()}]}.
-check_causal_delivery({Msg, MsgVV}, From, VV, Queue) ->
+%% check if a message should be deliver and deliver it, if not add it to the queue
+-spec check_causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}]) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+check_causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
-            NewVV = vclock:increment(From, VV),
+            NewVV = vclock:increment(Origin, VV),
             %% TODO: Handle message,
-            try_to_deliever(Queue, From, {NewVV, Queue});
+            try_to_deliever(Queue, {NewVV, Queue});
         false ->
-            {VV, [Queue | [{Msg, MsgVV}]]}
+            {VV, [Queue | [{Origin, Msg, MsgVV}]]}
     end.
 
 %% Check for all messages in the queue to be delivered
 %% Called upon delievery of a new message that could affect the delivery of messages in the queue
--spec try_to_deliever([{timestamp(), message()}], actor(), {timestamp(), [{timestamp(), message()}]}) -> {timestamp(), [{timestamp(), message()}]}.
-try_to_deliever([], _From, {VV, Queue}) -> {VV, Queue};
-try_to_deliever([{MsgVV, _Msg}=El | RQueue], From, {VV, Queue}=V) ->
+-spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+try_to_deliever([], {VV, Queue}) -> {VV, Queue};
+try_to_deliever([{Origin, MsgVV, _Msg}=El | RQueue], {VV, Queue}=V) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
-            NewVV = vclock:increment(From, VV),
+            NewVV = vclock:increment(Origin, VV),
             %% TODO: Handle message,
             Queue1 = lists:delete(El, Queue),
-            try_to_deliever(Queue1, From, {NewVV, Queue1});
+            try_to_deliever(Queue1, {NewVV, Queue1});
         false ->
-            try_to_deliever(RQueue, From, V)
+            try_to_deliever(RQueue, V)
     end.
