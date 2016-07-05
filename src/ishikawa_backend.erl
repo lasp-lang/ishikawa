@@ -51,7 +51,7 @@
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
-                to_be_ack_queue :: [{term(), [term()]}]}).
+                to_be_ack_queue :: [{{actor(), timestamp()}, [node()]}]}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -137,13 +137,13 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
     VClock = vclock:increment(Actor, VClock0),
 
     %% Generate message.
-    Message = {tcbcast, Actor, encode(Message), VClock},
+    Message1 = {tcbcast, Actor, encode(Message), VClock},
 
     %% Transmit to membership.
-    [send(Message, Peer) || Peer <- Members],
+    [send(Message1, Peer) || Peer <- Members],
 
     %% Add members to the queue of not ack messages.
-    ToBeAckQueue1 = [ToBeAckQueue | [{Message, Members}]],
+    ToBeAckQueue1 = [ToBeAckQueue | [{{Actor, VClock}, Members}]],
 
     {reply, ok, State#state{vv=VClock, to_be_ack_queue=ToBeAckQueue1}};
 handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
@@ -163,11 +163,11 @@ handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, {ok, false}, State};
-handle_call({tcbcast, Actor, _Message, VClock} = Msg, From, #state{to_be_ack_queue=Queue0, members=Members} = State) ->
-    case lists:keyfind(Msg, 1, Queue0) of
+handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=Queue0, members=Members} = State) ->
+    case lists:keyfind({Actor, VClock}, 1, Queue0) of
         {_, _} ->
             %% Generate message.
-            MessageAck = {tcbcast_ack, Actor, VClock},
+            MessageAck = {tcbcast_ack, Actor, Message, VClock},
 
             Queue1 = Queue0,
 
@@ -175,20 +175,20 @@ handle_call({tcbcast, Actor, _Message, VClock} = Msg, From, #state{to_be_ack_que
             send(MessageAck, From);
         false ->
             %% Add members to the queue of not ack messages.
-            Queue1 = [Queue0 | [Msg, Members]],
+            Queue1 = [Queue0 | [{Actor, Message, VClock}, Members]],
 
             %% Transmit to membership.
             [send(Msg, Peer) || Peer <- Members],
 
             %% Generate message.
-            MessageAck = {tcbcast_ack, Actor, VClock},
+            MessageAck = {tcbcast_ack, Actor, Message, VClock},
 
             %% Send Ack back to message sender
             send(MessageAck, From)
     end,
     {reply, ok, State#state{to_be_delivered_queue=Queue1}};
-handle_call({tcbcast_ack, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=QueueAck0} = State) ->
-    case lists:keyfind(Msg, 1, QueueAck0) of
+handle_call({tcbcast_ack, Actor, Message, VClock}, From, #state{to_be_ack_queue=QueueAck0} = State) ->
+    case lists:keyfind({Actor, VClock}, 1, QueueAck0) of
         {_, QueueMsg} ->
             case length(QueueMsg)>0 of
                 true ->
@@ -201,7 +201,7 @@ handle_call({tcbcast_ack, Actor, Message, VClock} = Msg, From, #state{to_be_ack_
                     end
             end
     end,
-    QueueAck1 = lists:keyreplace(Msg, 1, QueueAck0, {Msg, QueueMsg1}),
+    QueueAck1 = lists:keyreplace({Actor, VClock}, 1, QueueAck0, {{Actor, VClock}, QueueMsg1}),
     {reply, ok, State#state{to_be_ack_queue=QueueAck1}}.
 
 %% @private

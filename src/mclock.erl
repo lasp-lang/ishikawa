@@ -1,6 +1,5 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_core: Core Riak Application
 %%
 %% Copyright (c) 2016 Georges R. Younes, Inc.  All Rights Reserved.
 %%
