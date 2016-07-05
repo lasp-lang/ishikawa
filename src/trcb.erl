@@ -23,7 +23,7 @@
 
 -include("ishikawa.hrl").
 
--export([check_causal_delivery/3, try_to_deliever/2]).
+-export([causal_delivery/3, try_to_deliever/2]).
 
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
@@ -35,8 +35,8 @@
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
 %% check if a message should be deliver and deliver it, if not add it to the queue
--spec check_causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}]) -> {timestamp(), [{actor(), message(), timestamp()}]}.
-check_causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
+-spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}]) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
             NewVV = vclock:increment(Origin, VV),
