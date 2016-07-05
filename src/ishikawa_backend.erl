@@ -167,7 +167,7 @@ handle_call({tcbcast, Actor, _Message, VClock} = Msg, From, #state{to_be_ack_que
     case lists:keyfind(Msg, 1, Queue0) of
         {_, _} ->
             %% Generate message.
-            MessageAck = {tcbcastAck, Actor, VClock},
+            MessageAck = {tcbcast_ack, Actor, VClock},
 
             Queue1 = Queue0,
 
@@ -181,13 +181,13 @@ handle_call({tcbcast, Actor, _Message, VClock} = Msg, From, #state{to_be_ack_que
             [send(Msg, Peer) || Peer <- Members],
 
             %% Generate message.
-            MessageAck = {tcbcastAck, Actor, VClock},
+            MessageAck = {tcbcast_ack, Actor, VClock},
 
             %% Send Ack back to message sender
             send(MessageAck, From)
     end,
     {reply, ok, State#state{to_be_delivered_queue=Queue1}};
-handle_call({tcbcastAck, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=QueueAck0} = State) ->
+handle_call({tcbcast_ack, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=QueueAck0} = State) ->
     case lists:keyfind(Msg, 1, QueueAck0) of
         {_, QueueMsg} ->
             case length(QueueMsg)>0 of
