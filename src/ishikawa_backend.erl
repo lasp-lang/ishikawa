@@ -47,7 +47,7 @@
 
 -record(state, {actor :: actor(),
                 vv :: timestamp(),
-                members :: [term()],
+                members :: [node()],
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
