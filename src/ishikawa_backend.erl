@@ -50,7 +50,7 @@
                 members :: [term()],
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
-                to_be_delivered_queue :: [{timestamp(), term()}],
+                to_be_delivered_queue :: [{actor(), message(), timestamp()}],
                 to_be_ack_queue :: [{term(), [term()]}]}).
 
 %%%===================================================================
