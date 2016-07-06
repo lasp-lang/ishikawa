@@ -34,7 +34,7 @@
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
-%% check if a message should be deliver and deliver it, if not add it to the queue
+%% @doc check if a message should be deliver and deliver it, if not add it to the queue
 -spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}]) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
     case vclock:dominates(MsgVV, VV) of
@@ -43,10 +43,11 @@ causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
             %% TODO: Handle message,
             try_to_deliever(Queue, {NewVV, Queue});
         false ->
-            {VV, [Queue | [{Origin, Msg, MsgVV}]]}
+            {VV, Queue ++ [{Origin, Msg, MsgVV}]}
+
     end.
 
-%% Check for all messages in the queue to be delivered
+%% @doc Check for all messages in the queue to be delivered
 %% Called upon delievery of a new message that could affect the delivery of messages in the queue
 -spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 try_to_deliever([], {VV, Queue}) -> {VV, Queue};

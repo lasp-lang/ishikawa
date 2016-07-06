@@ -164,18 +164,16 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, {ok, false}, State};
 handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=Queue0, members=Members} = State) ->
-    case lists:keyfind({Actor, VClock}, 1, Queue0) of
+    Queue1 = case lists:keyfind({Actor, VClock}, 1, Queue0) of
         {_, _} ->
             %% Generate message.
             MessageAck = {tcbcast_ack, Actor, Message, VClock},
 
-            Queue1 = Queue0,
+            Queue0,
 
             %% Send Ack back to message sender
             send(MessageAck, From);
         false ->
-            %% Add members to the queue of not ack messages.
-            Queue1 = Queue0 ++ [{Actor, Message, VClock}, Members],
 
             %% Transmit to membership.
             [send(Msg, Peer) || Peer <- Members],
@@ -184,7 +182,10 @@ handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queu
             MessageAck = {tcbcast_ack, Actor, Message, VClock},
 
             %% Send Ack back to message sender
-            send(MessageAck, From)
+            send(MessageAck, From),
+
+            %% Add members to the queue of not ack messages.
+            Queue0 ++ [{Actor, Message, VClock}, Members]
     end,
     {reply, ok, State#state{to_be_delivered_queue=Queue1}};
 handle_call({tcbcast_ack, Actor, Message, VClock}, From, #state{to_be_ack_queue=QueueAck0} = State) ->
@@ -192,12 +193,10 @@ handle_call({tcbcast_ack, Actor, Message, VClock}, From, #state{to_be_ack_queue=
         {_, QueueMsg} ->
             case length(QueueMsg)>0 of
                 true ->
+                    QueueMsg1 = lists:delete(From, QueueMsg),
                     case length(QueueMsg) of
                         1 ->
-                            QueueMsg1 = lists:delete(From, QueueMsg),
-                            tcbdeliver(Actor, Message, VClock);
-                        _ ->
-                            QueueMsg1 = lists:delete(From, QueueMsg)
+                            tcbdeliver(Actor, Message, VClock)
                     end
             end
     end,
