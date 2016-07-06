@@ -44,6 +44,7 @@
 -include("ishikawa.hrl").
 
 -define(PEER_SERVICE, partisan_peer_service).
+-define(WAIT_TIME_BEFORE_RESEND, 3000).
 
 -record(state, {actor :: actor(),
                 vv :: timestamp(),
@@ -133,17 +134,18 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
                                               vv=VClock0,
                                               members=Members,
                                               to_be_ack_queue=ToBeAckQueue} = State) ->
+
     %% First, increment the vector.
     VClock = vclock:increment(Actor, VClock0),
 
     %% Generate message.
     Message1 = {tcbcast, Actor, encode(Message), VClock},
 
-    %% Transmit to membership.
-    [send(Message1, Peer) || Peer <- Members],
-
     %% Add members to the queue of not ack messages.
     ToBeAckQueue1 = ToBeAckQueue ++ [{{Actor, VClock}, Members}],
+
+    %% TODO: Figure out how to stop this once all acks are received
+    timer:send_interval(?WAIT_TIME_BEFORE_RESEND, {resend, Message1}),
 
     {reply, ok, State#state{vv=VClock, to_be_ack_queue=ToBeAckQueue1}};
 handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
@@ -213,6 +215,11 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+handle_info({resend, {tcbcast, Actor, _, VClock} = Message1}, #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
+    {_, Memb} = lists:keyfind({Actor, VClock}, 1, ToBeAckQueue0),
+    %% Transmit to membership.
+    [send(Message1, Peer) || Peer <- Memb],
+    {noreply, State};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
