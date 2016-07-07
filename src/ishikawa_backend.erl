@@ -52,7 +52,8 @@
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
-                to_be_ack_queue :: [{{actor(), timestamp()}, [node()]}]}).
+                to_be_ack_queue :: [{{actor(), timestamp()}, [node()]}],
+                msg_handling_fun :: fun()}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -93,8 +94,13 @@ update(State) ->
 %%%===================================================================
 
 %% @private
--spec init([]) -> {ok, #state{}}.
+-spec init(list()) -> {ok, #state{}}.
 init([]) ->
+    Fun = fun (Msg) ->
+        lager:warning("Unhandled messages: ~p", [Msg])
+    end,
+    init([Fun]);
+init([Fun]) ->
     %% Seed the process at initialization.
     random:seed(erlang:phash2([node()]),
                 erlang:monotonic_time(),
@@ -118,6 +124,8 @@ init([]) ->
     %% Generate local to be acknowledged messages queue.
     ToBeAckQueue = [],
 
+    MessageHandlingFun = Fun,
+
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
 
@@ -125,7 +133,7 @@ init([]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, to_be_delivered_queue=ToBeDeliveredQueue, to_be_ack_queue=ToBeAckQueue}}.
+    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, to_be_delivered_queue=ToBeDeliveredQueue, to_be_ack_queue=ToBeAckQueue, msg_handling_fun=MessageHandlingFun}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
