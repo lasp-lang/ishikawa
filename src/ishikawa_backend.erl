@@ -158,10 +158,11 @@ handle_call({tcbcast, Message}, _From, #state{actor=Actor,
     {reply, ok, State#state{vv=VClock, to_be_ack_queue=ToBeAckQueue1}};
 handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
                                               rtm=RTM0,
-                                              to_be_delivered_queue=Queue0} = State) ->
+                                              to_be_delivered_queue=Queue0,
+                                              msg_handling_fun=Foo} = State) ->
 
     %% Check if the message should be delivered and delivers it or not
-    {VClock, Queue} = trcb:causal_delivery({Origin, Message, Timestamp}, VClock0, Queue0),
+    {VClock, Queue} = trcb:causal_delivery({Origin, Message, Timestamp}, VClock0, Queue0, Foo),
 
     %% Update the Recent Timestamp Matrix
     RTM = mclock:update_rtm(RTM0, Origin, Timestamp),

@@ -23,7 +23,7 @@
 
 -include("ishikawa.hrl").
 
--export([causal_delivery/3, try_to_deliever/2]).
+-export([causal_delivery/4, try_to_deliever/3]).
 
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
@@ -35,13 +35,13 @@
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
 %% @doc check if a message should be deliver and deliver it, if not add it to the queue
--spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}]) -> {timestamp(), [{actor(), message(), timestamp()}]}.
-causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
+-spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+causal_delivery({Origin, Msg, MsgVV}, VV, Queue, Foo) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
             NewVV = vclock:increment(Origin, VV),
-            %% TODO: Handle message,
-            try_to_deliever(Queue, {NewVV, Queue});
+            Foo({NewVV, Msg}),
+            try_to_deliever(Queue, {NewVV, Queue}, Foo);
         false ->
             {VV, Queue ++ [{Origin, Msg, MsgVV}]}
 
@@ -49,15 +49,15 @@ causal_delivery({Origin, Msg, MsgVV}, VV, Queue) ->
 
 %% @doc Check for all messages in the queue to be delivered
 %% Called upon delievery of a new message that could affect the delivery of messages in the queue
--spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}) -> {timestamp(), [{actor(), message(), timestamp()}]}.
-try_to_deliever([], {VV, Queue}) -> {VV, Queue};
-try_to_deliever([{Origin, MsgVV, _Msg}=El | RQueue], {VV, Queue}=V) ->
+-spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}, fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
+try_to_deliever([{Origin, MsgVV, Msg}=El | RQueue], {VV, Queue}=V, Foo) ->
     case vclock:dominates(MsgVV, VV) of
         true ->
             NewVV = vclock:increment(Origin, VV),
-            %% TODO: Handle message,
+            Foo({NewVV, Msg}),
             Queue1 = lists:delete(El, Queue),
-            try_to_deliever(Queue1, {NewVV, Queue1});
+            try_to_deliever(Queue1, {NewVV, Queue1}, Foo);
         false ->
-            try_to_deliever(RQueue, V)
+            try_to_deliever(RQueue, V, Foo)
     end.
