@@ -97,7 +97,8 @@ update(State) ->
 -spec init(list()) -> {ok, #state{}}.
 init([]) ->
     Fun = fun (Msg) ->
-        lager:warning("Unhandled messages: ~p", [Msg])
+        lager:warning("Unhandled messages: ~p", [Msg]),
+        ok
     end,
     init([Fun]);
 init([Fun]) ->
