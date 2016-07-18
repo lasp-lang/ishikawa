@@ -136,7 +136,7 @@ init([Fun]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {_, TRef} = timer:send_interval(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
+    {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
 
     {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, time_ref=TRef, to_be_delivered_queue=ToBeDeliveredQueue, to_be_ack_queue=ToBeAckQueue, msg_handling_fun=MessageHandlingFun}}.
 
