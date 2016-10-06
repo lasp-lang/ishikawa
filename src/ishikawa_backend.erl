@@ -105,9 +105,9 @@ init([]) ->
     init([Fun]);
 init([Fun]) ->
     %% Seed the process at initialization.
-    random:seed(erlang:phash2([node()]),
-                erlang:monotonic_time(),
-                erlang:unique_integer()),
+    rand_compat:seed(erlang:phash2([node()]),
+                     erlang:monotonic_time(),
+                     erlang:unique_integer()),
 
     %% Generate actor identifier.
     Actor = gen_actor(),
