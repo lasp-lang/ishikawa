@@ -10,7 +10,8 @@
                   stdlib,
                   crypto,
                   lager,
-                  time_compat
+                  time_compat,
+                  rand_compat
                  ]},
   {mod, {ishikawa_app, []}},
   {modules, []},
