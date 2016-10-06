@@ -30,7 +30,7 @@
 
 %% trcb callbacks
 -export([tcbcast/1,
-         tcbdeliver/2,
+         tcbdeliver/3,
          tcbstable/1]).
 
 %% gen_server callbacks
@@ -44,10 +44,18 @@
 -include("ishikawa.hrl").
 
 -define(PEER_SERVICE, partisan_peer_service).
+-define(WAIT_TIME_BEFORE_CHECK_RESEND, 5000).
+-define(WAIT_TIME_BEFORE_RESEND, 10000).
 
 -record(state, {actor :: actor(),
                 vv :: timestamp(),
-                members :: [term()]}).
+                members :: [node()],
+                svv :: timestamp(),
+                rtm :: timestamp_matrix(),
+                time_ref :: integer(),
+                to_be_delivered_queue :: [{actor(), message(), timestamp()}],
+                to_be_ack_queue :: [{{actor(), timestamp()}, integer(), [node()]}],
+                msg_handling_fun :: fun()}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -59,9 +67,9 @@ tcbcast(Message) ->
     gen_server:call(?MODULE, {tcbcast, Message}, infinity).
 
 %% Deliver a message.
--spec tcbdeliver(message(), timestamp()) -> ok.
-tcbdeliver(Message, Timestamp) ->
-    gen_server:call(?MODULE, {tcbdeliver, Message, Timestamp}, infinity).
+-spec tcbdeliver(actor(), message(), timestamp()) -> ok.
+tcbdeliver(Actor, Message, Timestamp) ->
+    gen_server:call(?MODULE, {tcbdeliver, Actor, Message, Timestamp}, infinity).
 
 %% Determine if a timestamp is stable.
 -spec tcbstable(timestamp()) -> {ok, boolean()}.
@@ -88,8 +96,14 @@ update(State) ->
 %%%===================================================================
 
 %% @private
--spec init([]) -> {ok, #state{}}.
+-spec init(list()) -> {ok, #state{}}.
 init([]) ->
+    Fun = fun (Msg) ->
+        lager:warning("Unhandled messages: ~p", [Msg]),
+        ok
+    end,
+    init([Fun]);
+init([Fun]) ->
     %% Seed the process at initialization.
     random:seed(erlang:phash2([node()]),
                 erlang:monotonic_time(),
@@ -101,6 +115,20 @@ init([]) ->
     %% Generate local version vector.
     VClock = vclock:fresh(),
 
+    %% Generate local stable version vector.
+    SVV = vclock:fresh(),
+
+    %% Generate local recent timestamp matrix.
+    RTM = mclock:fresh(),
+
+    %% Generate local to be delivered messages queue.
+    ToBeDeliveredQueue = [],
+
+    %% Generate local to be acknowledged messages queue.
+    ToBeAckQueue = [],
+
+    MessageHandlingFun = Fun,
+
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
 
@@ -108,33 +136,75 @@ init([]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {ok, #state{actor=Actor, vv=VClock, members=Members}}.
+    {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
+
+    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, time_ref=TRef, to_be_delivered_queue=ToBeDeliveredQueue, to_be_ack_queue=ToBeAckQueue, msg_handling_fun=MessageHandlingFun}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-handle_call({tcbcast, Message}, _From, #state{actor=Actor,
-                                              vv=VClock0,
-                                              members=Members} = State) ->
-    %% First, increment the vector.
-    VClock = vclock:increment(Actor, VClock0),
+handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=ToBeAckQueue, members=Members, vv=VClock0} = State) ->
+    {ToBeAckQueue1, VClock1} = case lists:keyfind({Actor, VClock}, 1, ToBeAckQueue) of
+        {_, _, _} ->
+            %% Generate message.
+            MessageAck = {tcbcast_ack, Actor, encode(Message), VClock},
 
-    %% Generate message.
-    Message = {tcbcast, Actor, encode(Message), VClock},
+            %% Send Ack back to message sender
+            send(MessageAck, From),
 
-    %% Transmit to membership.
-    [send(Message, Peer) || Peer <- Members],
+            {ToBeAckQueue, VClock0};
 
-    {reply, ok, State#state{vv=VClock}};
-handle_call({tcbdeliver, _Message, _Timestamp}, _From, State) ->
-    %% TODO: Implement me.
-    {reply, ok, State};
+        false ->
+
+            %% Transmit to membership.
+            [send(Msg, Peer) || Peer <- Members],
+
+            %% get current time in milliseconds
+            CurrentTime = get_timestamp(),
+
+            %% Generate message.
+            MessageAck = {tcbcast_ack, Actor, encode(Message), VClock},
+
+            %% Send Ack back to message sender
+            send(MessageAck, From),
+
+            %% Add members to the queue of not ack messages and increment the vector clock.
+            {ToBeAckQueue ++ [{{Actor, VClock}, CurrentTime, Members}], vclock:increment(Actor, VClock0)}
+    end,
+
+    {reply, ok, State#state{vv=VClock1, to_be_ack_queue=ToBeAckQueue1}};
+handle_call({tcbcast_ack, Actor, Message, VClock}, From, #state{to_be_ack_queue=QueueAck0} = State) ->
+    case lists:keyfind({Actor, VClock}, 1, QueueAck0) of
+        {_, _Timestamp, QueueMsg} ->
+            case length(QueueMsg)>0 of
+                true ->
+                    QueueMsg1 = lists:delete(From, QueueMsg),
+                    case length(QueueMsg) of
+                        1 ->
+                            tcbdeliver(Actor, Message, VClock)
+                    end
+            end
+    end,
+    QueueAck1 = lists:keyreplace({Actor, VClock}, 1, QueueAck0, {{Actor, VClock}, QueueMsg1}),
+    {reply, ok, State#state{to_be_ack_queue=QueueAck1}};
+handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
+                                              rtm=RTM0,
+                                              to_be_delivered_queue=Queue0,
+                                              msg_handling_fun=Foo} = State) ->
+
+    %% Check if the message should be delivered and delivers it or not
+    {VClock, Queue} = trcb:causal_delivery({Origin, Message, Timestamp}, VClock0, Queue0, Foo),
+
+    %% Update the Recent Timestamp Matrix
+    RTM = mclock:update_rtm(RTM0, Origin, Timestamp),
+
+    %% Update the Stable Version Vector
+    SVV = mclock:update_stablevv(RTM),
+
+    {reply, ok, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
-    {reply, {ok, false}, State};
-handle_call(Msg, _From, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
-    {reply, ok, State}.
+    {reply, {ok, false}, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
@@ -146,6 +216,21 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+handle_info(check_resend, #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
+    Timestamp1 = get_timestamp(),
+    ToBeAckQueue1 = lists:foldl(
+        fun({{Actor, Msg, VClock} = Msg, Timestamp0, MembersList}, ToBeAckQueue) ->
+            case MembersList =/= [] andalso (Timestamp1 - Timestamp0 > ?WAIT_TIME_BEFORE_RESEND) of
+                true ->
+                    Message1 = {tcbcast, Actor, Msg, VClock},
+                    %% Transmit to membership.
+                    [send(Message1, Peer) || Peer <- MembersList],
+                    lists:keyreplace({Actor, VClock}, 1, ToBeAckQueue, {{Actor, VClock}, get_timestamp(), MembersList})
+            end
+        end,
+        ToBeAckQueue0,
+        ToBeAckQueue0),
+    {noreply, State#state{to_be_ack_queue=ToBeAckQueue1}};
 handle_info(Msg, State) ->
     lager:warning("Unhandled messages: ~p", [Msg]),
     {noreply, State}.
@@ -180,3 +265,9 @@ send(Msg, Peer) ->
 %% @private
 encode(Message) ->
     term_to_binary(Message).
+
+%% @private get current time in milliseconds
+-spec get_timestamp() -> integer().
+get_timestamp() ->
+  {Mega, Sec, Micro} = os:timestamp(),
+  (Mega*1000000 + Sec)*1000 + round(Micro/1000).

@@ -1,3 +1,4 @@
 -type actor() :: binary().
 -type message() :: binary().
 -type timestamp() :: vclock:vclock().
+-type timestamp_matrix() :: mclock:mclock().

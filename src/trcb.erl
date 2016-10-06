@@ -23,11 +23,50 @@
 
 -include("ishikawa.hrl").
 
+-export([causal_delivery/4, try_to_deliever/3]).
+
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
 
 %% Deliver a message.
--callback tcbdeliver(message(), timestamp()) -> ok.
+-callback tcbdeliver(actor(), message(), timestamp()) -> ok.
 
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
+
+%% @doc check if a message should be deliver and deliver it, if not add it to the queue
+-spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+causal_delivery({Origin, Msg, MsgVV}, VV, Queue, Function) ->
+    case vclock:dominates(MsgVV, VV) of
+        true ->
+            NewVV = vclock:increment(Origin, VV),
+            case Function({NewVV, Msg}) of
+                {error, Reason} ->
+                    lager:warning("failed to handle message: ~p", Reason),
+                    {VV, Queue ++ [{Origin, Msg, MsgVV}]};
+                ok ->
+                    try_to_deliever(Queue, {NewVV, Queue}, Function)
+            end;
+        false ->
+            {VV, Queue ++ [{Origin, Msg, MsgVV}]}
+    end.
+
+%% @doc Check for all messages in the queue to be delivered
+%% Called upon delievery of a new message that could affect the delivery of messages in the queue
+-spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}, fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
+try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
+try_to_deliever([{Origin, MsgVV, Msg}=El | RQueue], {VV, Queue}=V, Function) ->
+    case vclock:dominates(MsgVV, VV) of
+        true ->
+            NewVV = vclock:increment(Origin, VV),
+            case Function({NewVV, Msg}) of
+                {error, Reason} ->
+                    lager:warning("failed to handle message: ~p", Reason),
+                    try_to_deliever(RQueue, V, Function);
+                ok ->
+                    Queue1 = lists:delete(El, Queue),
+                    try_to_deliever(Queue1, {NewVV, Queue1}, Function)
+            end;
+        false ->
+            try_to_deliever(RQueue, V, Function)
+    end.
