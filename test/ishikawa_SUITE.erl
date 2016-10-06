@@ -115,6 +115,12 @@ causal_delivery_test(Config) ->
             end
     end,
 
+    %% Get the first node in the list.
+    [{_Name, Node}|_] = Nodes,
+
+    %% Send a series of messages.
+    ok = rpc:call(Node, ishikawa_backend, tcbcast, [1]),
+
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
 
@@ -183,6 +189,7 @@ start(_Case, _Config, Options) ->
                             ok = rpc:call(Node, application, start, [sasl]),
 
                             ok = rpc:call(Node, application, load, [partisan]),
+                            ok = rpc:call(Node, application, load, [ishikawa]),
                             ok = rpc:call(Node, application, load, [lager]),
                             ok = rpc:call(Node, application, set_env, [sasl,
                                                                        sasl_error_logger,
@@ -230,7 +237,7 @@ start(_Case, _Config, Options) ->
 
     StartFun = fun({_Name, Node}) ->
                         %% Start partisan.
-                        {ok, _} = rpc:call(Node, application, ensure_all_started, [partisan])
+                        {ok, _} = rpc:call(Node, application, ensure_all_started, [ishikawa])
                    end,
     lists:map(StartFun, Nodes),
 
