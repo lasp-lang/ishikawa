@@ -16,7 +16,7 @@
   0},
  {<<"partisan">>,
   {git,"https://github.com/lasp-lang/partisan",
-       {ref,"49acc24f8b7c3eb31de890c77fdea5f53f51c0d4"}},
+       {ref,"2f2f7866d994252c408a96581cdbd217eb905c97"}},
   0},
  {<<"ranch">>,
   {git,"https://github.com/extend/ranch.git",
@@ -33,4 +33,8 @@
  {<<"time_compat">>,
   {git,"git://github.com/lasp-lang/time_compat.git",
        {ref,"6007f68892104ebb6fa2366cebf9d928d8856273"}},
-  0}].
+  0},
+ {<<"types">>,
+  {git,"https://github.com/lasp-lang/types",
+       {ref,"da9f1c777e554d70360e9d3413eb4054756137ea"}},
+  1}].
