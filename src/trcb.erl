@@ -36,30 +36,32 @@
 
 %% @doc check if a message should be deliver and deliver it, if not add it to the queue
 -spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
-causal_delivery({Origin, Msg, MsgVV}, VV, Queue, Function) ->
-    case vclock:dominates(MsgVV, VV) of
+causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
+    lager:info("Our Clock: ~p", [VV]),
+    lager:info("Incoming Clock: ~p", [MessageVClock]),
+    case vclock:dominates(MessageVClock, VV) of
         true ->
             NewVV = vclock:increment(Origin, VV),
-            case Function({NewVV, Msg}) of
+            case Function({NewVV, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("failed to handle message: ~p", Reason),
-                    {VV, Queue ++ [{Origin, Msg, MsgVV}]};
+                    {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]};
                 ok ->
                     try_to_deliever(Queue, {NewVV, Queue}, Function)
             end;
         false ->
-            {VV, Queue ++ [{Origin, Msg, MsgVV}]}
+            {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]}
     end.
 
 %% @doc Check for all messages in the queue to be delivered
 %% Called upon delievery of a new message that could affect the delivery of messages in the queue
 -spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}, fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
-try_to_deliever([{Origin, MsgVV, Msg}=El | RQueue], {VV, Queue}=V, Function) ->
-    case vclock:dominates(MsgVV, VV) of
+try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=V, Function) ->
+    case vclock:dominates(MessageVClock, VV) of
         true ->
             NewVV = vclock:increment(Origin, VV),
-            case Function({NewVV, Msg}) of
+            case Function({NewVV, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("failed to handle message: ~p", Reason),
                     try_to_deliever(RQueue, V, Function);
