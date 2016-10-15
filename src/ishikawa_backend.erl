@@ -47,7 +47,8 @@
 -define(WAIT_TIME_BEFORE_CHECK_RESEND, 5000).
 -define(WAIT_TIME_BEFORE_RESEND, 10000).
 
--record(state, {actor :: actor(),
+-record(state, {myself :: node_spec(),
+                actor :: actor(),
                 vv :: timestamp(),
                 members :: [node()],
                 svv :: timestamp(),
@@ -110,7 +111,7 @@ init([Fun]) ->
                      erlang:unique_integer()),
 
     %% Generate actor identifier.
-    Actor = gen_actor(),
+    Actor = myself(),
 
     %% Generate local version vector.
     VClock = vclock:fresh(),
@@ -127,7 +128,11 @@ init([Fun]) ->
     %% Generate local to be acknowledged messages queue.
     ToBeAckQueue = [],
 
+    %% Message handling funtion.
     MessageHandlingFun = Fun,
+
+    %% Who am I?
+    Myself = myself(),
 
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
@@ -138,7 +143,8 @@ init([Fun]) ->
 
     {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
 
-    {ok, #state{actor=Actor,
+    {ok, #state{myself=Myself,
+                actor=Actor,
                 vv=VClock,
                 members=Members,
                 svv=SVV,
@@ -154,12 +160,16 @@ init([Fun]) ->
 
 handle_call({tcbcast, Message},
             _From,
-            #state{actor=Actor,
+            #state{myself=Myself,
+                   actor=Actor,
                    members=Members,
                    vv=VClock0,
                    to_be_ack_queue=ToBeAckQueue0}=State) ->
+    %% Node sending the message.
+    Sender = Myself,
+
     %% Generate message.
-    Msg = {tcbcast, Actor, Message, VClock0},
+    Msg = {tcbcast, Actor, Message, VClock0, Sender},
 
     %% Transmit to membership.
     [send(Msg, Peer) || Peer <- Members],
@@ -282,14 +292,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 %% @private
-gen_actor() ->
-    Node = atom_to_list(node()),
-    Unique = time_compat:unique_integer([positive]),
-    TS = integer_to_list(Unique),
-    Term = Node ++ TS,
-    crypto:hash(sha, Term).
-
-%% @private
 send(Msg, Peer) ->
     lager:info("Sending message: ~p to peer: ~p", [Msg, Peer]),
     PeerServiceManager = ?PEER_SERVICE:manager(),
@@ -304,3 +306,9 @@ encode(Message) ->
 get_timestamp() ->
   {Mega, Sec, Micro} = os:timestamp(),
   (Mega*1000000 + Sec)*1000 + round(Micro/1000).
+
+%% @private
+myself() ->
+    Port = partisan_config:get(peer_port, ?PEER_PORT),
+    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
+    {node(), IPAddress, Port}.
