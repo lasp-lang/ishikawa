@@ -204,7 +204,7 @@ handle_cast({tcbdeliver, Actor, MessageBody, MessageVClock} = Msg,
                    msg_handling_fun=Fun} = State) ->
     lager:info("Attempting to deliver message: ~p at ~p", [Msg, Myself]),
 
-    %% Check if the message should be delivered and delivers it or not
+    %% Check if the message should be delivered and delivers it or not.
     {VClock, Queue} = trcb:causal_delivery({Actor, MessageBody, MessageVClock},
                                            VClock0,
                                            Queue0,
