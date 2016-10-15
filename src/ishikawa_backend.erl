@@ -250,7 +250,7 @@ handle_cast({tcbcast, Actor, MessageBody, MessageVClock, Sender} = Msg,
             send(MessageAck, Sender),
 
             %% Add members to the queue of not ack messages and increment the vector clock.
-            ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, Members}],
+            ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, ToMembers}],
 
             {noreply, State#state{to_be_ack_queue=ToBeAckQueue}}
     end;
