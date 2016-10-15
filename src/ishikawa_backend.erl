@@ -169,7 +169,7 @@ handle_call({tcbcast, Message},
     Sender = Myself,
 
     %% Generate message.
-    Msg = {tcbcast, Actor, Message, VClock0, Sender},
+    Msg = {tcbcast, Actor, encode(Message), VClock0, Sender},
 
     %% Transmit to membership.
     [send(Msg, Peer) || Peer <- Members],
@@ -183,36 +183,6 @@ handle_call({tcbcast, Message},
 
     {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=VClock}};
 
-handle_call({tcbcast, Actor, Message, VClock} = Msg,
-            From,
-            #state{to_be_ack_queue=ToBeAckQueue, members=Members, vv=VClock0} = State) ->
-    {ToBeAckQueue1, VClock1} = case lists:keyfind({Actor, VClock}, 1, ToBeAckQueue) of
-        {_, _, _} ->
-            %% Generate message.
-            MessageAck = {tcbcast_ack, Actor, encode(Message), VClock},
-
-            %% Send Ack back to message sender
-            send(MessageAck, From),
-
-            {ToBeAckQueue, VClock0};
-        false ->
-            %% Transmit to membership.
-            [send(Msg, Peer) || Peer <- Members],
-
-            %% get current time in milliseconds
-            CurrentTime = get_timestamp(),
-
-            %% Generate message.
-            MessageAck = {tcbcast_ack, Actor, encode(Message), VClock},
-
-            %% Send Ack back to message sender
-            send(MessageAck, From),
-
-            %% Add members to the queue of not ack messages and increment the vector clock.
-            {ToBeAckQueue ++ [{{Actor, VClock}, CurrentTime, Members}], vclock:increment(Actor, VClock0)}
-    end,
-
-    {reply, ok, State#state{vv=VClock1, to_be_ack_queue=ToBeAckQueue1}};
 handle_call({tcbcast_ack, Actor, Message, VClock},
             From,
             #state{to_be_ack_queue=QueueAck0} = State) ->
@@ -250,8 +220,44 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+
+handle_cast({tcbcast, Actor, MessageBody, MessageVClock, Sender} = Msg,
+            #state{myself=Myself,
+                   to_be_ack_queue=ToBeAckQueue0,
+                   members=Members} = State) ->
+    lager:info("Received message: ~p from ~p", [Msg, Sender]),
+
+    case already_seen_message(Msg, ToBeAckQueue0) of
+        true ->
+            %% Already seen, do nothing.
+            lager:info("Ignoring duplicate message from cycle."),
+            {noreply, State};
+        false ->
+            %% Generate list of peers that need the message.
+            ToMembers = Members -- lists:flatten([Sender, Myself, Actor]),
+            lager:info("Broadcasting message to peers: ~p", [ToMembers]),
+
+            %% Transmit to peers that need the message.
+            [send(Msg, Peer) || Peer <- ToMembers],
+
+            %% Get current time in milliseconds.
+            CurrentTime = get_timestamp(),
+
+            %% Generate message.
+            MessageAck = {tcbcast_ack, Actor, MessageBody, MessageVClock, Myself},
+
+            %% Send ack back to message sender.
+            send(MessageAck, Sender),
+
+            %% Add members to the queue of not ack messages and increment the vector clock.
+            ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, Members}],
+
+            {noreply, State#state{to_be_ack_queue=ToBeAckQueue}}
+    end;
+
 handle_cast({membership, Members}, State) ->
     {noreply, State#state{members=Members}};
+
 handle_cast(Msg, State) ->
     lager:warning("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
@@ -309,6 +315,8 @@ get_timestamp() ->
 
 %% @private
 myself() ->
-    Port = partisan_config:get(peer_port, ?PEER_PORT),
-    IPAddress = partisan_config:get(peer_ip, ?PEER_IP),
-    {node(), IPAddress, Port}.
+    node().
+
+%% @private
+already_seen_message({tcbcast, Actor, _Message, VClock, _Sender}, ToBeAckQueue) ->
+    lists:keymember({Actor, VClock}, 1, ToBeAckQueue).
