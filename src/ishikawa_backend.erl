@@ -47,7 +47,7 @@
 -define(WAIT_TIME_BEFORE_CHECK_RESEND, 5000).
 -define(WAIT_TIME_BEFORE_RESEND, 10000).
 
--record(state, {myself :: node_spec(),
+-record(state, {myself :: node(),
                 actor :: actor(),
                 vv :: timestamp(),
                 members :: [node()],
