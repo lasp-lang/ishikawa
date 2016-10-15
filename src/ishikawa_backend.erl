@@ -151,7 +151,31 @@ init([Fun]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
-handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queue=ToBeAckQueue, members=Members, vv=VClock0} = State) ->
+
+handle_call({tcbcast, Message},
+            _From,
+            #state{actor=Actor,
+                   members=Members,
+                   vv=VClock0,
+                   to_be_ack_queue=ToBeAckQueue0}=State) ->
+    %% Generate message.
+    Msg = {tcbcast, Actor, Message, VClock0},
+
+    %% Transmit to membership.
+    [send(Msg, Peer) || Peer <- Members],
+
+    %% Get current time in milliseconds.
+    CurrentTime = get_timestamp(),
+
+    %% Add members to the queue of not ack messages and increment the vector clock.
+    ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, VClock0}, CurrentTime, Members}],
+    VClock = vclock:increment(Actor, VClock0),
+
+    {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=VClock}};
+
+handle_call({tcbcast, Actor, Message, VClock} = Msg,
+            From,
+            #state{to_be_ack_queue=ToBeAckQueue, members=Members, vv=VClock0} = State) ->
     {ToBeAckQueue1, VClock1} = case lists:keyfind({Actor, VClock}, 1, ToBeAckQueue) of
         {_, _, _} ->
             %% Generate message.
