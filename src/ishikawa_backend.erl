@@ -138,7 +138,15 @@ init([Fun]) ->
 
     {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
 
-    {ok, #state{actor=Actor, vv=VClock, members=Members, svv=SVV, rtm=RTM, time_ref=TRef, to_be_delivered_queue=ToBeDeliveredQueue, to_be_ack_queue=ToBeAckQueue, msg_handling_fun=MessageHandlingFun}}.
+    {ok, #state{actor=Actor,
+                vv=VClock,
+                members=Members,
+                svv=SVV,
+                rtm=RTM,
+                time_ref=TRef,
+                to_be_delivered_queue=ToBeDeliveredQueue,
+                to_be_ack_queue=ToBeAckQueue,
+                msg_handling_fun=MessageHandlingFun}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
