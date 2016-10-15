@@ -161,9 +161,7 @@ handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queu
             send(MessageAck, From),
 
             {ToBeAckQueue, VClock0};
-
         false ->
-
             %% Transmit to membership.
             [send(Msg, Peer) || Peer <- Members],
 
