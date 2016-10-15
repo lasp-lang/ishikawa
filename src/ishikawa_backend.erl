@@ -64,8 +64,8 @@
 
 %% Broadcast message.
 -spec tcbcast(message()) -> ok.
-tcbcast(Message) ->
-    gen_server:call(?MODULE, {tcbcast, Message}, infinity).
+tcbcast(MessageBody) ->
+    gen_server:call(?MODULE, {tcbcast, MessageBody}, infinity).
 
 %% Deliver a message.
 -spec tcbdeliver(actor(), message(), timestamp()) -> ok.
