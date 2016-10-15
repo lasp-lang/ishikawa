@@ -100,7 +100,7 @@ update(State) ->
 -spec init(list()) -> {ok, #state{}}.
 init([]) ->
     Fun = fun(Msg) ->
-        lager:warning("Delivering message: ~p", [Msg]),
+        lager:warning("MESSAGE DELIVERED: ~p", [Msg]),
         ok
     end,
     init([Fun]);
