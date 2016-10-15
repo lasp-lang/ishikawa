@@ -183,22 +183,6 @@ handle_call({tcbcast, Message},
 
     {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=VClock}};
 
-handle_call({tcbcast_ack, Actor, Message, VClock},
-            From,
-            #state{to_be_ack_queue=QueueAck0} = State) ->
-    case lists:keyfind({Actor, VClock}, 1, QueueAck0) of
-        {_, _Timestamp, QueueMsg} ->
-            case length(QueueMsg)>0 of
-                true ->
-                    QueueMsg1 = lists:delete(From, QueueMsg),
-                    case length(QueueMsg) of
-                        1 ->
-                            tcbdeliver(Actor, Message, VClock)
-                    end
-            end
-    end,
-    QueueAck1 = lists:keyreplace({Actor, VClock}, 1, QueueAck0, {{Actor, VClock}, QueueMsg1}),
-    {reply, ok, State#state{to_be_ack_queue=QueueAck1}};
 handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
                                               rtm=RTM0,
                                               to_be_delivered_queue=Queue0,
@@ -214,12 +198,38 @@ handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
     SVV = mclock:update_stablevv(RTM),
 
     {reply, ok, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
+
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
     {reply, {ok, false}, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+
+handle_cast({tcbcast_ack, Actor, _Message, VClock, Sender} = Msg,
+            #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
+    lager:info("Received message: ~p from ~p", [Msg, Sender]),
+
+    %% Get list of waiting ackwnoledgements.
+    {_, Timestamp, Members0} = lists:keyfind({Actor, VClock},
+                                     1,
+                                     ToBeAckQueue0),
+
+    %% Remove this member as an outstanding member.
+    Members = lists:delete(Sender, Members0),
+
+    ToBeAckQueue = case length(Members) of
+        0 ->
+            %% None left, remove from ack queue.
+            lists:keydelete({Actor, VClock}, 1, ToBeAckQueue0);
+        _ ->
+            %% Still some left, preserve.
+            lists:keyreplace({Actor, VClock},
+                             1,
+                             ToBeAckQueue0, {{Actor, VClock}, Timestamp, Members})
+    end,
+
+    {noreply, State#state{to_be_ack_queue=ToBeAckQueue}};
 
 handle_cast({tcbcast, Actor, MessageBody, MessageVClock, Sender} = Msg,
             #state{myself=Myself,
@@ -277,8 +287,7 @@ handle_info(check_resend, #state{myself=Myself, to_be_ack_queue=ToBeAckQueue0} =
                     lists:keyreplace({Actor, VClock},
                                      1,
                                      ToBeAckQueue,
-                                     {{Actor, VClock}, get_timestamp(),
-                                      MembersList});
+                                     {{Actor, VClock}, get_timestamp(), MembersList});
                 false ->
                     %% Do nothing.
                     ToBeAckQueue
