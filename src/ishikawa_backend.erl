@@ -211,7 +211,7 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
 handle_cast({membership, Members}, State) ->
     {noreply, State#state{members=Members}};
 handle_cast(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled cast messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
@@ -232,7 +232,7 @@ handle_info(check_resend, #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
         ToBeAckQueue0),
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue1}};
 handle_info(Msg, State) ->
-    lager:warning("Unhandled messages: ~p", [Msg]),
+    lager:warning("Unhandled info messages: ~p", [Msg]),
     {noreply, State}.
 
 %% @private
@@ -259,6 +259,7 @@ gen_actor() ->
 
 %% @private
 send(Msg, Peer) ->
+    lager:info("Sending message: ~p to peer: ~p", [Msg, Peer]),
     PeerServiceManager = ?PEER_SERVICE:manager(),
     PeerServiceManager:forward_message(Peer, ?MODULE, Msg).
 
