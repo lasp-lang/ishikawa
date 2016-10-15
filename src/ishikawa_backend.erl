@@ -181,7 +181,9 @@ handle_call({tcbcast, Actor, Message, VClock} = Msg, From, #state{to_be_ack_queu
     end,
 
     {reply, ok, State#state{vv=VClock1, to_be_ack_queue=ToBeAckQueue1}};
-handle_call({tcbcast_ack, Actor, Message, VClock}, From, #state{to_be_ack_queue=QueueAck0} = State) ->
+handle_call({tcbcast_ack, Actor, Message, VClock},
+            From,
+            #state{to_be_ack_queue=QueueAck0} = State) ->
     case lists:keyfind({Actor, VClock}, 1, QueueAck0) of
         {_, _Timestamp, QueueMsg} ->
             case length(QueueMsg)>0 of
