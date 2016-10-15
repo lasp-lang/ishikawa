@@ -69,8 +69,8 @@ tcbcast(Message) ->
 
 %% Deliver a message.
 -spec tcbdeliver(actor(), message(), timestamp()) -> ok.
-tcbdeliver(Actor, Message, Timestamp) ->
-    gen_server:call(?MODULE, {tcbdeliver, Actor, Message, Timestamp}, infinity).
+tcbdeliver(Actor, MessageBody, MessageVClock) ->
+    gen_server:cast(?MODULE, {tcbdeliver, Actor, MessageBody, MessageVClock}).
 
 %% Determine if a timestamp is stable.
 -spec tcbstable(timestamp()) -> {ok, boolean()}.
@@ -99,8 +99,8 @@ update(State) ->
 %% @private
 -spec init(list()) -> {ok, #state{}}.
 init([]) ->
-    Fun = fun (Msg) ->
-        lager:warning("Unhandled messages: ~p", [Msg]),
+    Fun = fun(Msg) ->
+        lager:warning("Delivering message: ~p", [Msg]),
         ok
     end,
     init([Fun]);
@@ -181,23 +181,10 @@ handle_call({tcbcast, Message},
     ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, VClock0}, CurrentTime, Members}],
     VClock = vclock:increment(Actor, VClock0),
 
+    %% Attempt to deliver locally if we received it on the wire.
+    tcbdeliver(Actor, Message, VClock0),
+
     {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=VClock}};
-
-handle_call({tcbdeliver, Origin, Message, Timestamp}, _From, #state{vv=VClock0,
-                                              rtm=RTM0,
-                                              to_be_delivered_queue=Queue0,
-                                              msg_handling_fun=Foo} = State) ->
-
-    %% Check if the message should be delivered and delivers it or not
-    {VClock, Queue} = trcb:causal_delivery({Origin, Message, Timestamp}, VClock0, Queue0, Foo),
-
-    %% Update the Recent Timestamp Matrix
-    RTM = mclock:update_rtm(RTM0, Origin, Timestamp),
-
-    %% Update the Stable Version Vector
-    SVV = mclock:update_stablevv(RTM),
-
-    {reply, ok, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
@@ -205,6 +192,32 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+
+%% TODO: What are the rules on when we can deliver a particular message
+%%       in the system.
+%%       Why did Georges wait for the message to be acknolwedged by
+%%       everyone?  That seems unnecessary.
+handle_cast({tcbdeliver, Actor, MessageBody, MessageVClock} = Msg,
+            #state{vv=VClock0,
+                   myself=Myself,
+                   rtm=RTM0,
+                   to_be_delivered_queue=Queue0,
+                   msg_handling_fun=Fun} = State) ->
+    lager:info("Attempting to deliver message: ~p at ~p", [Msg, Myself]),
+
+    %% Check if the message should be delivered and delivers it or not
+    {VClock, Queue} = trcb:causal_delivery({Actor, MessageBody, MessageVClock},
+                                           VClock0,
+                                           Queue0,
+                                           Fun),
+
+    %% Update the Recent Timestamp Matrix
+    RTM = mclock:update_rtm(RTM0, Actor, MessageVClock),
+
+    %% Update the Stable Version Vector
+    SVV = mclock:update_stablevv(RTM),
+
+    {noreply, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 
 handle_cast({tcbcast_ack, Actor, _Message, VClock, Sender} = Msg,
             #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
@@ -296,6 +309,7 @@ handle_info(check_resend, #state{myself=Myself, to_be_ack_queue=ToBeAckQueue0} =
         ToBeAckQueue0,
         ToBeAckQueue0),
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue1}};
+
 handle_info(Msg, State) ->
     lager:warning("Unhandled info messages: ~p", [Msg]),
     {noreply, State}.
