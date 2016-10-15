@@ -44,7 +44,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
             NewVV = vclock:increment(Origin, VV),
             case Function({NewVV, MessageBody}) of
                 {error, Reason} ->
-                    lager:warning("failed to handle message: ~p", Reason),
+                    lager:warning("Failed to handle message: ~p", Reason),
                     {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]};
                 ok ->
                     try_to_deliever(Queue, {NewVV, Queue}, Function)
@@ -64,7 +64,7 @@ try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=
             NewVV = vclock:increment(Origin, VV),
             case Function({NewVV, MessageBody}) of
                 {error, Reason} ->
-                    lager:warning("failed to handle message: ~p", Reason),
+                    lager:warning("Failed to handle message: ~p", Reason),
                     try_to_deliever(RQueue, V, Function);
                 ok ->
                     Queue1 = lists:delete(El, Queue),
