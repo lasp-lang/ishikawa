@@ -158,7 +158,7 @@ init([Fun]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
-handle_call({tcbcast, Message},
+handle_call({tcbcast, MessageBody},
             _From,
             #state{myself=Myself,
                    actor=Actor,
@@ -168,8 +168,11 @@ handle_call({tcbcast, Message},
     %% Node sending the message.
     Sender = Myself,
 
+    %% Increment vclock.
+    MessageVClock = vclock:increment(Actor, VClock0),
+
     %% Generate message.
-    Msg = {tcbcast, Actor, encode(Message), VClock0, Sender},
+    Msg = {tcbcast, Actor, encode(MessageBody), MessageVClock, Sender},
 
     %% Transmit to membership.
     [send(Msg, Peer) || Peer <- Members],
@@ -178,13 +181,9 @@ handle_call({tcbcast, Message},
     CurrentTime = get_timestamp(),
 
     %% Add members to the queue of not ack messages and increment the vector clock.
-    ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, VClock0}, CurrentTime, Members}],
-    VClock = vclock:increment(Actor, VClock0),
+    ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, Members}],
 
-    %% Attempt to deliver locally if we received it on the wire.
-    tcbdeliver(Actor, Message, VClock0),
-
-    {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=VClock}};
+    {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=MessageVClock}};
 
 handle_call({tcbstable, _Timestamp}, _From, State) ->
     %% TODO: Implement me.
