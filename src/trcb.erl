@@ -50,6 +50,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
                     try_to_deliever(Queue, {NewVV, Queue}, Function)
             end;
         false ->
+            lager:info("Message shouldn't be delivered: queueing."),
             {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]}
     end.
 
