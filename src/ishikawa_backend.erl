@@ -210,11 +210,19 @@ handle_cast({tcbdeliver, Actor, MessageBody, MessageVClock} = Msg,
                                            Queue0,
                                            Fun),
 
-    %% Update the Recent Timestamp Matrix
+    lager:info("VClock before merge: ~p", [VClock0]),
+    lager:info("VClock after merge: ~p", [VClock]),
+
+    %% Update the Recent Timestamp Matrix.
     RTM = mclock:update_rtm(RTM0, Actor, MessageVClock),
 
-    %% Update the Stable Version Vector
+    lager:info("RTM before: ~p", [RTM0]),
+    lager:info("RTM after: ~p", [RTM]),
+
+    %% Update the Stable Version Vector.
     SVV = mclock:update_stablevv(RTM),
+
+    lager:info("Stable vector now: ~p", [SVV]),
 
     {noreply, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 
