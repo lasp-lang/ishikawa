@@ -272,6 +272,9 @@ handle_cast({tcbcast, Actor, MessageBody, MessageVClock, Sender} = Msg,
             %% Send ack back to message sender.
             send(MessageAck, Sender),
 
+            %% Attempt to deliver locally if we received it on the wire.
+            tcbdeliver(Actor, MessageBody, MessageVClock),
+
             %% Add members to the queue of not ack messages and increment the vector clock.
             ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, ToMembers}],
 
