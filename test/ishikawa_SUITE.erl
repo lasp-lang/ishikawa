@@ -127,7 +127,8 @@ causal_delivery_test(Config) ->
 
     lists:foreach(fun({_ClientName, ClientNode}) ->
                         DeliveryFun = fun(Msg) ->
-                                              Self ! {delivery, ClientNode, Msg}
+                                              Self ! {delivery, ClientNode, Msg},
+                                              ok
                                       end,
                         ok = rpc:call(ClientNode,
                                       ishikawa_backend,
