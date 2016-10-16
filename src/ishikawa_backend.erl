@@ -211,7 +211,7 @@ handle_cast({tcbdeliver, Actor, MessageBody, MessageVClock} = Msg,
     lager:info("Attempting to deliver message: ~p at ~p", [Msg, Myself]),
 
     %% Check if the message should be delivered and delivers it or not.
-    {VClock, Queue} = trcb:causal_delivery({Actor, MessageBody, MessageVClock},
+    {VClock, Queue} = trcb:causal_delivery({Actor, decode(MessageBody), MessageVClock},
                                            VClock0,
                                            Queue0,
                                            DeliveryFun),
@@ -353,6 +353,10 @@ send(Msg, Peer) ->
 %% @private
 encode(Message) ->
     term_to_binary(Message).
+
+%% @private
+decode(Message) ->
+    binary_to_term(Message).
 
 %% @private get current time in milliseconds
 -spec get_timestamp() -> integer().
