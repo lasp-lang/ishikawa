@@ -48,8 +48,7 @@
 -define(WAIT_TIME_BEFORE_CHECK_RESEND, 5000).
 -define(WAIT_TIME_BEFORE_RESEND, 10000).
 
--record(state, {myself :: node(),
-                actor :: node(),
+-record(state, {actor :: node(),
                 vv :: timestamp(),
                 members :: [node()],
                 svv :: timestamp(),
@@ -134,9 +133,6 @@ init([DeliveryFun]) ->
     %% Generate local to be acknowledged messages queue.
     ToBeAckQueue = [],
 
-    %% Who am I?
-    Myself = myself(),
-
     %% Add membership callback.
     ?PEER_SERVICE:add_sup_callback(fun ?MODULE:update/1),
 
@@ -146,8 +142,7 @@ init([DeliveryFun]) ->
 
     {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
 
-    {ok, #state{myself=Myself,
-                actor=Actor,
+    {ok, #state{actor=Actor,
                 vv=VClock,
                 members=Members,
                 svv=SVV,
@@ -166,13 +161,12 @@ handle_call({delivery_function, DeliveryFun}, _From, State) ->
 
 handle_call({tcbcast, MessageBody},
             _From,
-            #state{myself=Myself,
-                   actor=Actor,
+            #state{actor=Actor,
                    members=Members,
                    vv=VClock0,
                    to_be_ack_queue=ToBeAckQueue0}=State) ->
     %% Node sending the message.
-    Sender = Myself,
+    Sender = Actor,
 
     %% Increment vclock.
     MessageVClock = vclock:increment(Actor, VClock0),
@@ -204,11 +198,11 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
 %%       everyone?  That seems unnecessary.
 handle_cast({tcbdeliver, MessageActor, MessageBody, MessageVClock} = Msg,
             #state{vv=VClock0,
-                   myself=Myself,
+                   actor=Actor,
                    rtm=RTM0,
                    to_be_delivered_queue=Queue0,
                    delivery_function=DeliveryFun} = State) ->
-    lager:info("Attempting to deliver message: ~p at ~p", [Msg, Myself]),
+    lager:info("Attempting to deliver message: ~p at ~p", [Msg, Actor]),
 
     %% Check if the message should be delivered and delivers it or not.
     {VClock, Queue} = trcb:causal_delivery({MessageActor, decode(MessageBody), MessageVClock},
@@ -258,7 +252,7 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue}};
 
 handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
-            #state{myself=Myself,
+            #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
                    members=Members} = State) ->
     lager:info("Received message: ~p from ~p", [Msg, Sender]),
@@ -270,7 +264,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             {noreply, State};
         false ->
             %% Generate list of peers that need the message.
-            ToMembers = Members -- lists:flatten([Sender, Myself, MessageActor]),
+            ToMembers = Members -- lists:flatten([Sender, Actor, MessageActor]),
             lager:info("Broadcasting message to peers: ~p", [ToMembers]),
 
             %% Transmit to peers that need the message.
@@ -280,7 +274,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             CurrentTime = get_timestamp(),
 
             %% Generate message.
-            MessageAck = {tcbcast_ack, MessageActor, MessageBody, MessageVClock, Myself},
+            MessageAck = {tcbcast_ack, MessageActor, MessageBody, MessageVClock, Actor},
 
             %% Send ack back to message sender.
             send(MessageAck, Sender),
@@ -303,13 +297,13 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info(check_resend, #state{myself=Myself, to_be_ack_queue=ToBeAckQueue0} = State) ->
+handle_info(check_resend, #state{actor=ACtor, to_be_ack_queue=ToBeAckQueue0} = State) ->
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
         fun({{MessageActor, VClock} = Msg, Timestamp0, MembersList}, ToBeAckQueue) ->
             case MembersList =/= [] andalso (Now - Timestamp0 > ?WAIT_TIME_BEFORE_RESEND) of
                 true ->
-                    Message1 = {tcbcast, MessageActor, Msg, VClock, Myself},
+                    Message1 = {tcbcast, MessageActor, Msg, VClock, ACtor},
                     %% Retransmit to membership.
                     %% TODO: Only retransmit where it's needed.
                     [send(Message1, Peer) || Peer <- MembersList],
