@@ -41,6 +41,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
     lager:info("Incoming Clock: ~p", [MessageVClock]),
     case vclock:dominates(MessageVClock, VV) of
         true ->
+            %% TODO: Why is this increment operation here?
             NewVV = vclock:increment(Origin, VV),
             case Function({NewVV, MessageBody}) of
                 {error, Reason} ->
