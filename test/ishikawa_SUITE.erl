@@ -115,14 +115,43 @@ causal_delivery_test(Config) ->
             end
     end,
 
-    %% Get the first node in the list.
-    [{_Name, Node}|_] = Nodes,
-
-    %% Send a series of messages.
-    ok = rpc:call(Node, ishikawa_backend, tcbcast, [1]),
-
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
+
+    %% Get the first node in the list.
+    [{_ServerName, ServerNode} | ClientNodes] = Nodes,
+
+    %% Configure the delivery function on each node to send the messages
+    %% back to the test runner in delivery order.
+    Self = self(),
+
+    lists:foreach(fun({_ClientName, ClientNode}) ->
+                        DeliveryFun = fun(Msg) ->
+                                              Self ! {delivery, ClientNode, Msg}
+                                      end,
+                        ok = rpc:call(ClientNode,
+                                      ishikawa_backend,
+                                      set_delivery_function,
+                                      [DeliveryFun])
+                  end, ClientNodes),
+
+    %% Send a series of messages.
+    ok = rpc:call(ServerNode, ishikawa_backend, tcbcast, [1]),
+
+    %% Ensure each node receives a message.
+    lists:foreach(fun({_ClientName, ClientNode}) ->
+                        receive
+                            {delivery, ClientNode, 1} ->
+                                ok;
+                            {delivery, ClientNode, Message} ->
+                                ct:fail("Client ~p received incorrect message: ~p",
+                                        [ClientNode, Message])
+                        after
+                            1000 ->
+                                ct:fail("Client ~p didn't receive message!",
+                                        [ClientNode])
+                        end
+                  end, ClientNodes),
 
     %% Stop nodes.
     stop(Nodes),
