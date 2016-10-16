@@ -43,7 +43,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
         true ->
             %% TODO: Why is this increment operation here?
             NewVV = vclock:increment(Origin, VV),
-            case Function({NewVV, MessageBody}) of
+            case Function(MessageBody) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
                     {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]};
