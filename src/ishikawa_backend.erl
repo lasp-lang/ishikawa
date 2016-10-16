@@ -49,7 +49,7 @@
 -define(WAIT_TIME_BEFORE_RESEND, 10000).
 
 -record(state, {myself :: node(),
-                actor :: actor(),
+                actor :: node(),
                 vv :: timestamp(),
                 members :: [node()],
                 svv :: timestamp(),
