@@ -26,6 +26,7 @@
 
 %% API
 -export([start_link/0,
+         set_delivery_function/1,
          update/1]).
 
 %% trcb callbacks
@@ -56,7 +57,7 @@
                 time_ref :: integer(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
                 to_be_ack_queue :: [{{actor(), timestamp()}, integer(), [node()]}],
-                msg_handling_fun :: fun()}).
+                delivery_function :: fun()}).
 
 %%%===================================================================
 %%% trcb callbacks
@@ -92,6 +93,11 @@ update(State) ->
     Members = ?PEER_SERVICE:decode(State),
     gen_server:cast(?MODULE, {membership, Members}).
 
+%% @doc Configure the delivery function externally.
+-spec set_delivery_function(function()) -> ok.
+set_delivery_function(DeliveryFun) ->
+    gen_server:call(?MODULE, {delivery_function, DeliveryFun}, infinity).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -99,12 +105,12 @@ update(State) ->
 %% @private
 -spec init(list()) -> {ok, #state{}}.
 init([]) ->
-    Fun = fun(Msg) ->
-        lager:warning("MESSAGE DELIVERED: ~p", [Msg]),
+    DeliveryFun = fun(Msg) ->
+        lager:warning("Message delivered: ~p", [Msg]),
         ok
     end,
-    init([Fun]);
-init([Fun]) ->
+    init([DeliveryFun]);
+init([DeliveryFun]) ->
     %% Seed the process at initialization.
     rand_compat:seed(erlang:phash2([node()]),
                      erlang:monotonic_time(),
@@ -128,9 +134,6 @@ init([Fun]) ->
     %% Generate local to be acknowledged messages queue.
     ToBeAckQueue = [],
 
-    %% Message handling funtion.
-    MessageHandlingFun = Fun,
-
     %% Who am I?
     Myself = myself(),
 
@@ -152,11 +155,14 @@ init([Fun]) ->
                 time_ref=TRef,
                 to_be_delivered_queue=ToBeDeliveredQueue,
                 to_be_ack_queue=ToBeAckQueue,
-                msg_handling_fun=MessageHandlingFun}}.
+                delivery_function=DeliveryFun}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+
+handle_call({delivery_function, DeliveryFun}, _From, State) ->
+    {reply, ok, State#state{delivery_function=DeliveryFun}};
 
 handle_call({tcbcast, MessageBody},
             _From,
@@ -201,14 +207,14 @@ handle_cast({tcbdeliver, Actor, MessageBody, MessageVClock} = Msg,
                    myself=Myself,
                    rtm=RTM0,
                    to_be_delivered_queue=Queue0,
-                   msg_handling_fun=Fun} = State) ->
+                   delivery_function=DeliveryFun} = State) ->
     lager:info("Attempting to deliver message: ~p at ~p", [Msg, Myself]),
 
     %% Check if the message should be delivered and delivers it or not.
     {VClock, Queue} = trcb:causal_delivery({Actor, MessageBody, MessageVClock},
                                            VClock0,
                                            Queue0,
-                                           Fun),
+                                           DeliveryFun),
 
     lager:info("VClock before merge: ~p", [VClock0]),
     lager:info("VClock after merge: ~p", [VClock]),
@@ -232,8 +238,8 @@ handle_cast({tcbcast_ack, Actor, _Message, VClock, Sender} = Msg,
 
     %% Get list of waiting ackwnoledgements.
     {_, Timestamp, Members0} = lists:keyfind({Actor, VClock},
-                                     1,
-                                     ToBeAckQueue0),
+                                             1,
+                                             ToBeAckQueue0),
 
     %% Remove this member as an outstanding member.
     Members = lists:delete(Sender, Members0),
