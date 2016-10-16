@@ -69,8 +69,8 @@ tcbcast(MessageBody) ->
 
 %% Deliver a message.
 -spec tcbdeliver(actor(), message(), timestamp()) -> ok.
-tcbdeliver(Actor, MessageBody, MessageVClock) ->
-    gen_server:cast(?MODULE, {tcbdeliver, Actor, MessageBody, MessageVClock}).
+tcbdeliver(MessageActor, MessageBody, MessageVClock) ->
+    gen_server:cast(?MODULE, {tcbdeliver, MessageActor, MessageBody, MessageVClock}).
 
 %% Determine if a timestamp is stable.
 -spec tcbstable(timestamp()) -> {ok, boolean()}.

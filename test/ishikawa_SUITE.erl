@@ -137,7 +137,7 @@ causal_delivery_test(Config) ->
                   end, ClientNodes),
 
     %% Send a series of messages.
-    ok = rpc:call(ServerNode, ishikawa_backend, tcbcast, [1]),
+    ok = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
 
     %% Ensure each node receives a message.
     lists:foreach(fun({_ClientName, ClientNode}) ->
