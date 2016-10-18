@@ -297,13 +297,13 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info(check_resend, #state{actor=ACtor, to_be_ack_queue=ToBeAckQueue0} = State) ->
+handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = State) ->
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
         fun({{MessageActor, VClock} = Msg, Timestamp0, MembersList}, ToBeAckQueue) ->
             case MembersList =/= [] andalso (Now - Timestamp0 > ?WAIT_TIME_BEFORE_RESEND) of
                 true ->
-                    Message1 = {tcbcast, MessageActor, Msg, VClock, ACtor},
+                    Message1 = {tcbcast, MessageActor, Msg, VClock, Actor},
                     %% Retransmit to membership.
                     %% TODO: Only retransmit where it's needed.
                     [send(Message1, Peer) || Peer <- MembersList],
