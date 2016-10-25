@@ -40,7 +40,10 @@
          handle_cast/2,
          handle_info/2,
          terminate/2,
-         code_change/3]).
+         code_change/3,
+         already_seen_message/2]).
+         %already_seen_message/3,
+         %inToBeDeliveredQueue/2]).
 
 -include("ishikawa.hrl").
 
@@ -254,9 +257,12 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
 handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
+                   %to_be_delivered_queue=ToBeDeliveredQueue,
+                   %vv=VClock,
                    members=Members} = State) ->
     lager:info("Received message: ~p from ~p", [Msg, Sender]),
 
+    %case already_seen_message(Msg, VClock, ToBeDeliveredQueue) of
     case already_seen_message(Msg, ToBeAckQueue0) of
         true ->
             %% Already seen, do nothing.
@@ -365,3 +371,27 @@ myself() ->
 %% @private
 already_seen_message({tcbcast, MessageActor, _MessageBody, MessageVClock, _Sender}, ToBeAckQueue) ->
     lists:keymember({MessageActor, MessageVClock}, 1, ToBeAckQueue).
+
+% %% @private
+% already_seen_messageX(MessageVC, NodeVC, ToBeDeliveredQueue) ->
+%     case vclock:dominates(MessageVC, NodeVC) of
+%         true ->
+%             true;
+%         false ->
+%             case vclock:equal(MessageVC, NodeVC) of
+%                 true ->
+%                     true;
+%                 false ->
+%                     case inToBeDeliveredQueue(MessageVC, ToBeDeliveredQueue) of
+%                         true ->
+%                             true;
+%                         false ->
+%                             false
+%                     end
+%             end
+%     end.
+
+% %% @private
+% inToBeDeliveredQueue(MsgVC, ToBeDeliveredQueue) ->
+%     QueueVCs = [MessageVC || {_MessageActor, _MessageBody, MessageVC} <- ToBeDeliveredQueue],
+%     lists:keymember(MsgVC, 1, QueueVCs).
