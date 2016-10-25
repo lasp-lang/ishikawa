@@ -371,5 +371,4 @@ already_seen_message(MessageVC, NodeVC, ToBeDeliveredQueue) ->
 
 %% @private
 in_to_be_delivered_queue(MsgVC, ToBeDeliveredQueue) ->
-    QueueVCs = [MessageVC || {_MessageActor, _MessageBody, MessageVC} <- ToBeDeliveredQueue],
-    lists:member(MsgVC, QueueVCs).
+    lists:keymember(MsgVC, 3, ToBeDeliveredQueue).
