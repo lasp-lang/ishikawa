@@ -39,8 +39,7 @@
 causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
     lager:info("Our Clock: ~p", [VV]),
     lager:info("Incoming Clock: ~p", [MessageVClock]),
-    %case can_be_delivered(MessageVClock, VV, Origin) of
-    case vclock:dominates(MessageVClock, VV) of
+    case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
             %% TODO: Why is this increment operation here?
             NewVV = vclock:increment(Origin, VV),
@@ -61,8 +60,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
 -spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}, fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
 try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=V, Function) ->
-    %case can_be_delivered(MessageVClock, VV, Origin) of
-    case vclock:dominates(MessageVClock, VV) of
+    case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
             NewVV = vclock:increment(Origin, VV),
             case Function({NewVV, MessageBody}) of
@@ -77,22 +75,22 @@ try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=
             try_to_deliever(RQueue, V, Function)
     end.
 
-% %% private
-% can_be_delivered(MsgVClock, NodeVClock, Origin) ->
-%     orddict:fold(
-%         fun(Key, Value, Acc) ->
-%             case orddict:find(Key, NodeVClock) of
-%                 {ok, NodeVCValue} ->
-%                     case Key =:= Origin of
-%                         true ->
-%                             Acc and (Value =:= NodeVCValue + 1);
-%                         false ->
-%                             Acc and (Value =< NodeVCValue)
-%                     end;
-%                 _ ->
-%                     true and Acc
-%             end
-%         end,
-%         true,
-%         MsgVClock
-%     ).
+%% @private
+can_be_delivered(MsgVClock, NodeVClock, Origin) ->
+    orddict:fold(
+        fun(Key, Value, Acc) ->
+            case orddict:find(Key, NodeVClock) of
+                {ok, NodeVCValue} ->
+                    case Key =:= Origin of
+                        true ->
+                            Acc and (Value =:= NodeVCValue + 1);
+                        false ->
+                            Acc and (Value =< NodeVCValue)
+                    end;
+                _ ->
+                    true and Acc
+            end
+        end,
+        true,
+        MsgVClock
+    ).
