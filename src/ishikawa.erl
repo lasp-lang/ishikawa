@@ -23,6 +23,13 @@
 -export([start/0,
          stop/0]).
 
+%% API
+-export([tcbcast/1,
+         tcbdeliver/3,
+         tcbstable/1]).
+
+-include("ishikawa.hrl").
+
 %% @doc Start the application.
 start() ->
     application:ensure_all_started(ishikawa).
@@ -30,3 +37,22 @@ start() ->
 %% @doc Stop the application.
 stop() ->
     application:stop(ishikawa).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%% Broadcast message.
+-spec tcbcast(message()) -> ok.
+tcbcast(MessageBody) ->
+    ishikawa_backend:tcbcast(MessageBody).
+
+%% Deliver a message.
+-spec tcbdeliver(actor(), message(), timestamp()) -> ok.
+tcbdeliver(MessageActor, MessageBody, MessageVClock) ->
+    ishikawa_backend:tcbdeliver(MessageActor, MessageBody, MessageVClock).
+
+%% Determine if a timestamp is stable.
+-spec tcbstable(timestamp()) -> {ok, boolean()}.
+tcbstable(Timestamp) ->
+    ishikawa_backend:tcbstable(Timestamp).

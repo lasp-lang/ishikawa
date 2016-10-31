@@ -51,7 +51,12 @@ fresh() ->
 
 -spec update_rtm(mclock(), actor(), vclock:vclock()) -> mclock().
 update_rtm(RTM, MsgActor, MsgVV) ->
-    lists:keyreplace(MsgActor, 1, RTM, {MsgActor, MsgVV}).
+    case lists:keymember(MsgActor, 1, RTM) of
+        true ->
+            lists:keyreplace(MsgActor, 1, RTM, {MsgActor, MsgVV});
+        false ->
+            RTM ++ [{MsgActor, MsgVV}]
+    end.
 
 -spec update_stablevv(mclock()) -> vclock:vclock().
 update_stablevv(RTM0) ->
