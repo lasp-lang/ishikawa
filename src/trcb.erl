@@ -28,9 +28,6 @@
 %% Broadcast message.
 -callback tcbcast(message()) -> ok.
 
-%% Deliver a message.
--callback tcbdeliver(actor(), message(), timestamp()) -> ok.
-
 %% Determine if a timestamp is stable.
 -callback tcbstable(timestamp()) -> {ok, boolean()}.
 
@@ -41,13 +38,12 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
     lager:info("Incoming Clock: ~p", [MessageVClock]),
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            %% TODO: Why is this increment operation here?
-            NewVV = vclock:increment(Origin, VV),
-            case Function(MessageBody) of
+            case Function({VV, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
                     {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]};
                 ok ->
+                    NewVV = vclock:increment(Origin, VV),
                     try_to_deliever(Queue, {NewVV, Queue}, Function)
             end;
         false ->
@@ -62,14 +58,14 @@ try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
 try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=V, Function) ->
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            NewVV = vclock:increment(Origin, VV),
-            case Function({NewVV, MessageBody}) of
+            case Function({VV, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
                     try_to_deliever(RQueue, V, Function);
                 ok ->
+                    NewVV = vclock:increment(Origin, VV),
                     Queue1 = lists:delete(El, Queue),
-                    try_to_deliever(Queue1, {NewVV, Queue1}, Function)
+                    try_to_deliever(RQueue, {NewVV, Queue1}, Function)
             end;
         false ->
             try_to_deliever(RQueue, V, Function)

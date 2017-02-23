@@ -26,12 +26,11 @@
 
 %% API
 -export([start_link/0,
-         set_delivery_function/1,
          update/1]).
 
 %% trcb callbacks
--export([tcbcast/1,
-         tcbdeliver/3,
+-export([tcbdelivery/1,
+         tcbcast/1,
          tcbstable/1]).
 
 %% gen_server callbacks
@@ -62,15 +61,15 @@
 %%% trcb callbacks
 %%%===================================================================
 
+%% Configure the delivery function.
+-spec tcbdelivery(function()) -> ok.
+tcbdelivery(DeliveryFunction) ->
+    gen_server:call(?MODULE, {tcbdelivery, DeliveryFunction}, infinity).
+
 %% Broadcast message.
 -spec tcbcast(message()) -> ok.
 tcbcast(MessageBody) ->
     gen_server:call(?MODULE, {tcbcast, MessageBody}, infinity).
-
-%% Deliver a message.
--spec tcbdeliver(actor(), message(), timestamp()) -> ok.
-tcbdeliver(MessageActor, MessageBody, MessageVClock) ->
-    gen_server:cast(?MODULE, {tcbdeliver, MessageActor, MessageBody, MessageVClock}).
 
 %% Determine if a timestamp is stable.
 -spec tcbstable(timestamp()) -> {ok, boolean()}.
@@ -92,12 +91,6 @@ update(State) ->
     Members = ?PEER_SERVICE:decode(State),
     gen_server:cast(?MODULE, {membership, Members}).
 
-%% @doc Configure the delivery function externally.
--spec set_delivery_function(function()) -> ok.
-set_delivery_function(DeliveryFun) ->
-    gen_server:call(?MODULE, {delivery_function, DeliveryFun}, infinity).
-
-%%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
@@ -109,6 +102,7 @@ init([]) ->
         ok
     end,
     init([DeliveryFun]);
+
 init([DeliveryFun]) ->
     %% Seed the process at initialization.
     rand_compat:seed(erlang:phash2([node()]),
@@ -156,8 +150,8 @@ init([DeliveryFun]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 
-handle_call({delivery_function, DeliveryFun}, _From, State) ->
-    {reply, ok, State#state{delivery_function=DeliveryFun}};
+handle_call({tcbdelivery, DeliveryFunction}, _From, State) ->
+    {reply, ok, State#state{delivery_function=DeliveryFunction}};
 
 handle_call({tcbcast, MessageBody},
             _From,
@@ -191,41 +185,6 @@ handle_call({tcbstable, _Timestamp}, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-
-%% TODO: What are the rules on when we can deliver a particular message
-%%       in the system.
-%%       Why did Georges wait for the message to be acknolwedged by
-%%       everyone?  That seems unnecessary.
-handle_cast({tcbdeliver, MessageActor, MessageBody, MessageVClock} = Msg,
-            #state{vv=VClock0,
-                   actor=Actor,
-                   rtm=RTM0,
-                   to_be_delivered_queue=Queue0,
-                   delivery_function=DeliveryFun} = State) ->
-    lager:info("Attempting to deliver message: ~p at ~p", [Msg, Actor]),
-
-    %% Check if the message should be delivered and delivers it or not.
-    {VClock, Queue} = trcb:causal_delivery({MessageActor, decode(MessageBody), MessageVClock},
-                                           VClock0,
-                                           Queue0,
-                                           DeliveryFun),
-
-    lager:info("VClock before merge: ~p", [VClock0]),
-    lager:info("VClock after merge: ~p", [VClock]),
-
-    %% Update the Recent Timestamp Matrix.
-    RTM = mclock:update_rtm(RTM0, MessageActor, MessageVClock),
-
-    lager:info("RTM before: ~p", [RTM0]),
-    lager:info("RTM after: ~p", [RTM]),
-
-    %% Update the Stable Version Vector.
-    SVV = mclock:update_stablevv(RTM),
-
-    lager:info("Stable vector now: ~p", [SVV]),
-
-    {noreply, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
-
 handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
             #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
     lager:info("Received message: ~p from ~p", [Msg, Sender]),
@@ -282,13 +241,47 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             send(MessageAck, Sender),
 
             %% Attempt to deliver locally if we received it on the wire.
-            tcbdeliver(MessageActor, MessageBody, MessageVClock),
+            gen_server:cast(?MODULE, {deliver, MessageActor, MessageBody, MessageVClock}),
 
             %% Add members to the queue of not ack messages and increment the vector clock.
             ToBeAckQueue = ToBeAckQueue0 ++ [{{MessageActor, MessageVClock}, CurrentTime, ToMembers}],
 
             {noreply, State#state{to_be_ack_queue=ToBeAckQueue}}
     end;
+
+%% TODO: What are the rules on when we can deliver a particular message
+%%       in the system.
+%%       Why did Georges wait for the message to be acknolwedged by
+%%       everyone?  That seems unnecessary.
+handle_cast({deliver, MessageActor, MessageBody, MessageVClock} = Msg,
+            #state{vv=VClock0,
+                   actor=Actor,
+                   rtm=RTM0,
+                   to_be_delivered_queue=Queue0,
+                   delivery_function=DeliveryFun} = State) ->
+    lager:info("Attempting to deliver message: ~p at ~p", [Msg, Actor]),
+
+    %% Check if the message should be delivered and delivers it or not.
+    {VClock, Queue} = trcb:causal_delivery({MessageActor, decode(MessageBody), MessageVClock},
+                                           VClock0,
+                                           Queue0,
+                                           DeliveryFun),
+
+    lager:info("VClock before merge: ~p", [VClock0]),
+    lager:info("VClock after merge: ~p", [VClock]),
+
+    %% Update the Recent Timestamp Matrix.
+    RTM = mclock:update_rtm(RTM0, MessageActor, MessageVClock),
+
+    lager:info("RTM before: ~p", [RTM0]),
+    lager:info("RTM after: ~p", [RTM]),
+
+    %% Update the Stable Version Vector.
+    SVV = mclock:update_stablevv(RTM),
+
+    lager:info("Stable vector now: ~p", [SVV]),
+
+    {noreply, State#state{vv=VClock, to_be_delivered_queue=Queue, svv=SVV, rtm=RTM}};
 
 handle_cast({membership, Members}, State) ->
     {noreply, State#state{members=Members}};
