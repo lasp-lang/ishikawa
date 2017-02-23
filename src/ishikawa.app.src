@@ -4,14 +4,15 @@
   {vsn, "0.0.1"},
   {registered, []},
   {maintainers,["Christopher S. Meiklejohn"]},
-  {included_applications,[partisan]},
+  {included_applications,[]},
   {applications, [
                   kernel,
                   stdlib,
                   crypto,
                   lager,
                   time_compat,
-                  rand_compat
+                  rand_compat,
+                  partisan
                  ]},
   {mod, {ishikawa_app, []}},
   {modules, []},
