@@ -101,9 +101,13 @@ causal_delivery_test(Config) ->
                     %% Otherwise, it should only know about the server
                     %% and itself.
                     lists:usort(
-                        lists:map(fun(S) ->
-                                    proplists:get_value(S, Nodes)
-                            end, Servers) ++ [Node])
+                        lists:map(
+                            fun(Server) ->
+                                proplists:get_value(Server, Nodes)
+                            end,
+                            Servers
+                        ) ++ [Node]
+                    )
             end,
 
             SortedMembers = lists:usort(Members),
@@ -126,13 +130,13 @@ causal_delivery_test(Config) ->
     Self = self(),
 
     lists:foreach(fun({_ClientName, ClientNode}) ->
-                        DeliveryFun = fun(Msg) ->
+                        DeliveryFun = fun({_VV, Msg}) ->
                                               Self ! {delivery, ClientNode, Msg},
                                               ok
                                       end,
                         ok = rpc:call(ClientNode,
-                                      ishikawa_backend,
-                                      set_delivery_function,
+                                      ishikawa,
+                                      tcbdelivery,
                                       [DeliveryFun])
                   end, ClientNodes),
 
@@ -311,8 +315,9 @@ cluster(Node, Nodes, Manager) when is_list(Nodes) ->
                                  [Server]
                          end
                  end,
-    lists:map(fun(OtherNode) -> cluster(Node, OtherNode) end, OtherNodes).
-cluster({_, Node}, {_, OtherNode}) ->
+    lists:map(fun(OtherNode) -> join(Node, OtherNode) end, OtherNodes).
+
+join({_, Node}, {_, OtherNode}) ->
     PeerPort = rpc:call(OtherNode,
                         partisan_config,
                         get,
