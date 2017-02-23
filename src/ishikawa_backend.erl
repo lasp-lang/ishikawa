@@ -87,9 +87,8 @@ start_link() ->
 
 %% @doc Update membership.
 -spec update(term()) -> ok.
-update(State) ->
-    Members = ?PEER_SERVICE:decode(State),
-    gen_server:cast(?MODULE, {membership, Members}).
+update(Membership) ->
+    gen_server:cast(?MODULE, {membership, Membership}).
 
 %%% gen_server callbacks
 %%%===================================================================
