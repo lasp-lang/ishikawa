@@ -71,7 +71,7 @@ tcbdelivery(DeliveryFunction) ->
 tcbcast(MessageBody) ->
     gen_server:call(?MODULE, {tcbcast, MessageBody}, infinity).
 
-%% Receives a list of timestamps and returns a list of the stbale ones.
+%% Receives a list of timestamps and returns a list of the stable ones.
 -spec tcbstable([timestamp()]) -> [timestamp()].
 tcbstable(Timestamps) ->
     gen_server:call(?MODULE, {tcbstable, Timestamps}, infinity).

@@ -28,7 +28,7 @@
 %% Broadcast message.
 -callback tcbcast(message()) -> {ok, timestamp()}.
 
-%% Receives a list of timestamps and returns a list of the stbale ones.
+%% Receives a list of timestamps and returns a list of the stable ones.
 -callback tcbstable([timestamp()]) -> [timestamp()].
 
 %% @doc check if a message should be deliver and deliver it, if not add it to the queue

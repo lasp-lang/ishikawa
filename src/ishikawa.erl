@@ -54,7 +54,7 @@ tcbdelivery(DeliveryFunction) ->
 tcbcast(MessageBody) ->
     ?BACKEND:tcbcast(MessageBody).
 
-%% Receives a list of timestamps and returns a list of the stbale ones.
+%% Receives a list of timestamps and returns a list of the stable ones.
 -spec tcbstable([timestamp()]) -> [timestamp()].
 tcbstable(Timestamps) ->
     ?BACKEND:tcbstable(Timestamps).
