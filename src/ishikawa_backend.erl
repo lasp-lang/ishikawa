@@ -89,7 +89,8 @@ start_link() ->
 -spec update(term()) -> ok.
 update(State) ->
     Members = ?PEER_SERVICE:decode(State),
-    gen_server:cast(?MODULE, {membership, Members}).
+    OtherMembers = Members -- [myself()],
+    gen_server:cast(?MODULE, {membership, OtherMembers}).
 
 %%% gen_server callbacks
 %%%===================================================================
