@@ -71,10 +71,10 @@ tcbdelivery(DeliveryFunction) ->
 tcbcast(MessageBody) ->
     gen_server:call(?MODULE, {tcbcast, MessageBody}, infinity).
 
-%% Determine if a timestamp is stable.
--spec tcbstable(timestamp()) -> {ok, boolean()}.
-tcbstable(Timestamp) ->
-    gen_server:call(?MODULE, {tcbstable, Timestamp}, infinity).
+%% Receives a list of timestamps and returns a list of the stbale ones.
+-spec tcbstable([timestamp()]) -> [timestamp()].
+tcbstable(Timestamps) ->
+    gen_server:call(?MODULE, {tcbstable, Timestamps}, infinity).
 
 %%%===================================================================
 %%% API
@@ -179,9 +179,10 @@ handle_call({tcbcast, MessageBody},
 
     {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=MessageVClock}};
 
-handle_call({tcbstable, _Timestamp}, _From, State) ->
-    %% TODO: Implement me.
-    {reply, {ok, false}, State}.
+handle_call({tcbstable, Timestamps}, _From, #state{svv=SVV}=State) ->
+    %% check if Timestamp is stable
+    StableTimestamps = lists:filter(fun(T) -> vclock:descends(SVV, T) end, Timestamps),
+    {reply, StableTimestamps, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
@@ -249,10 +250,6 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             {noreply, State#state{to_be_ack_queue=ToBeAckQueue}}
     end;
 
-%% TODO: What are the rules on when we can deliver a particular message
-%%       in the system.
-%%       Why did Georges wait for the message to be acknolwedged by
-%%       everyone?  That seems unnecessary.
 handle_cast({deliver, MessageActor, MessageBody, MessageVClock} = Msg,
             #state{vv=VClock0,
                    actor=Actor,

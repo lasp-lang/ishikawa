@@ -54,7 +54,7 @@ tcbdelivery(DeliveryFunction) ->
 tcbcast(MessageBody) ->
     ?BACKEND:tcbcast(MessageBody).
 
-%% Determine if a timestamp is stable.
--spec tcbstable(timestamp()) -> {ok, boolean()}.
-tcbstable(Timestamp) ->
-    ?BACKEND:tcbstable(Timestamp).
+%% Receives a list of timestamps and returns a list of the stbale ones.
+-spec tcbstable([timestamp()]) -> [timestamp()].
+tcbstable(Timestamps) ->
+    ?BACKEND:tcbstable(Timestamps).
