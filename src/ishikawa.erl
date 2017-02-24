@@ -50,11 +50,11 @@ tcbdelivery(DeliveryFunction) ->
     ?BACKEND:tcbdelivery(DeliveryFunction).
 
 %% Broadcast message.
--spec tcbcast(message()) -> ok.
+-spec tcbcast(message()) -> {ok, timestamp()}.
 tcbcast(MessageBody) ->
     ?BACKEND:tcbcast(MessageBody).
 
-%% Determine if a timestamp is stable.
--spec tcbstable(timestamp()) -> {ok, boolean()}.
-tcbstable(Timestamp) ->
-    ?BACKEND:tcbstable(Timestamp).
+%% Receives a list of timestamps and returns a list of the stable ones.
+-spec tcbstable([timestamp()]) -> [timestamp()].
+tcbstable(Timestamps) ->
+    ?BACKEND:tcbstable(Timestamps).

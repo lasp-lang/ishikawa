@@ -26,10 +26,10 @@
 -export([causal_delivery/4, try_to_deliever/3]).
 
 %% Broadcast message.
--callback tcbcast(message()) -> ok.
+-callback tcbcast(message()) -> {ok, timestamp()}.
 
-%% Determine if a timestamp is stable.
--callback tcbstable(timestamp()) -> {ok, boolean()}.
+%% Receives a list of timestamps and returns a list of the stable ones.
+-callback tcbstable([timestamp()]) -> [timestamp()].
 
 %% @doc check if a message should be deliver and deliver it, if not add it to the queue
 -spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
