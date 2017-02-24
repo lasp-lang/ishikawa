@@ -67,7 +67,7 @@ tcbdelivery(DeliveryFunction) ->
     gen_server:call(?MODULE, {tcbdelivery, DeliveryFunction}, infinity).
 
 %% Broadcast message.
--spec tcbcast(message()) -> ok.
+-spec tcbcast(message()) -> {ok, timestamp()}.
 tcbcast(MessageBody) ->
     gen_server:call(?MODULE, {tcbcast, MessageBody}, infinity).
 
@@ -177,7 +177,7 @@ handle_call({tcbcast, MessageBody},
     %% Add members to the queue of not ack messages and increment the vector clock.
     ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, Members}],
 
-    {reply, ok, State#state{to_be_ack_queue=ToBeAckQueue, vv=MessageVClock}};
+    {reply, {ok, MessageVClock}, State#state{to_be_ack_queue=ToBeAckQueue, vv=MessageVClock}};
 
 handle_call({tcbstable, Timestamps}, _From, #state{svv=SVV}=State) ->
     %% check if Timestamp is stable

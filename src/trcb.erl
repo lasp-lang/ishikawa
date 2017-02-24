@@ -26,7 +26,7 @@
 -export([causal_delivery/4, try_to_deliever/3]).
 
 %% Broadcast message.
--callback tcbcast(message()) -> ok.
+-callback tcbcast(message()) -> {ok, timestamp()}.
 
 %% Receives a list of timestamps and returns a list of the stbale ones.
 -callback tcbstable([timestamp()]) -> [timestamp()].

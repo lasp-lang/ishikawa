@@ -50,7 +50,7 @@ tcbdelivery(DeliveryFunction) ->
     ?BACKEND:tcbdelivery(DeliveryFunction).
 
 %% Broadcast message.
--spec tcbcast(message()) -> ok.
+-spec tcbcast(message()) -> {ok, timestamp()}.
 tcbcast(MessageBody) ->
     ?BACKEND:tcbcast(MessageBody).
 
