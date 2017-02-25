@@ -167,8 +167,13 @@ handle_call({tcbcast, MessageBody},
     %% Increment vclock.
     MessageVClock = vclock:increment(Actor, VClock0),
 
-    %% Deliver locally.
-    DeliveryFun({MessageVClock, MessageBody}),
+    case ishikawa_config:get(deliver_locally, ?DELIVER_LOCALLY_DEFAULT) of
+        true ->
+            %% Deliver locally.
+            DeliveryFun({MessageVClock, MessageBody});
+        false ->
+            ok
+    end,
 
     %% Generate message.
     Msg = {tcbcast, Actor, encode(MessageBody), MessageVClock, Sender},
