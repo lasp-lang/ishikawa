@@ -212,7 +212,7 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
 
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue}};
 
-handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
+handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender},
             #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
                    to_be_delivered_queue=ToBeDeliveredQueue,
@@ -229,6 +229,9 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg,
             %% Generate list of peers that need the message.
             ToMembers = Members -- lists:flatten([Sender, Actor, MessageActor]),
             lager:info("Broadcasting message to peers: ~p", [ToMembers]),
+
+            %% Generate message.
+            Msg = {tcbcast, MessageActor, MessageBody, MessageVClock, Actor},
 
             %% Transmit to peers that need the message.
             [send(Msg, Peer) || Peer <- ToMembers],
