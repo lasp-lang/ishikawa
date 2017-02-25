@@ -159,12 +159,16 @@ handle_call({tcbcast, MessageBody},
             #state{actor=Actor,
                    members=Members,
                    vv=VClock0,
-                   to_be_ack_queue=ToBeAckQueue0}=State) ->
+                   to_be_ack_queue=ToBeAckQueue0,
+                   delivery_function=DeliveryFun}=State) ->
     %% Node sending the message.
     Sender = Actor,
 
     %% Increment vclock.
     MessageVClock = vclock:increment(Actor, VClock0),
+
+    %% Deliver locally.
+    DeliveryFun({MessageVClock, MessageBody}),
 
     %% Generate message.
     Msg = {tcbcast, Actor, encode(MessageBody), MessageVClock, Sender},
