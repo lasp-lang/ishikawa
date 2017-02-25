@@ -215,12 +215,12 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
 handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
-                   to_be_delivered_queue=ToBeDeliveredQueue,
+                   to_be_delivered_queue=ToBeDeliveredQueue0,
                    vv=VClock,
                    members=Members} = State) ->
     lager:info("Received message: ~p from ~p", [Msg0, Sender]),
 
-    case already_seen_message(MessageVClock, VClock, ToBeDeliveredQueue) of
+    case already_seen_message(MessageVClock, VClock, ToBeDeliveredQueue0) of
         true ->
             %% Already seen, do nothing.
             lager:info("Ignoring duplicate message from cycle."),
@@ -239,6 +239,9 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             %% Get current time in milliseconds.
             CurrentTime = get_timestamp(),
 
+            %% add message to delivery queue
+            ToBeDeliveredQueue = ToBeDeliveredQueue0  ++ [{MessageActor, MessageBody, MessageVClock}],
+
             %% Generate message.
             MessageAck = {tcbcast_ack, MessageActor, MessageBody, MessageVClock, Actor},
 
@@ -251,7 +254,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             %% Add members to the queue of not ack messages and increment the vector clock.
             ToBeAckQueue = ToBeAckQueue0 ++ [{{MessageActor, MessageVClock}, CurrentTime, ToMembers}],
 
-            {noreply, State#state{to_be_ack_queue=ToBeAckQueue}}
+            {noreply, State#state{to_be_ack_queue=ToBeAckQueue, to_be_delivered_queue=ToBeDeliveredQueue}}
     end;
 
 handle_cast({deliver, MessageActor, MessageBody, MessageVClock} = Msg,

@@ -33,7 +33,7 @@
 
 %% @doc check if a message should be deliver and deliver it, if not add it to the queue
 -spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
-causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
+causal_delivery({Origin, MessageBody, MessageVClock}=El, VV, Queue, Function) ->
     lager:info("Our Clock: ~p", [VV]),
     lager:info("Incoming Clock: ~p", [MessageVClock]),
     case can_be_delivered(MessageVClock, VV, Origin) of
@@ -41,14 +41,15 @@ causal_delivery({Origin, MessageBody, MessageVClock}, VV, Queue, Function) ->
             case Function({VV, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
-                    {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]};
+                    {VV, Queue};
                 ok ->
                     NewVV = vclock:increment(Origin, VV),
-                    try_to_deliever(Queue, {NewVV, Queue}, Function)
+                    NewQueue = lists:delete(El, Queue),
+                    try_to_deliever(Queue, {NewVV, NewQueue}, Function)
             end;
         false ->
             lager:info("Message shouldn't be delivered: queueing."),
-            {VV, Queue ++ [{Origin, MessageBody, MessageVClock}]}
+            {VV, Queue}
     end.
 
 %% @doc Check for all messages in the queue to be delivered
