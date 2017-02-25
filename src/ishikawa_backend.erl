@@ -212,13 +212,13 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
 
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue}};
 
-handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender},
+handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
                    to_be_delivered_queue=ToBeDeliveredQueue,
                    vv=VClock,
                    members=Members} = State) ->
-    lager:info("Received message: ~p from ~p", [Msg, Sender]),
+    lager:info("Received message: ~p from ~p", [Msg0, Sender]),
 
     case already_seen_message(MessageVClock, VClock, ToBeDeliveredQueue) of
         true ->
