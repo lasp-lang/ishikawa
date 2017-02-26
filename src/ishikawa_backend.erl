@@ -135,14 +135,14 @@ init([DeliveryFun]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    {_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
+    %{_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
 
     {ok, #state{actor=Actor,
                 vv=VClock,
                 members=Members,
                 svv=SVV,
                 rtm=RTM,
-                time_ref=TRef,
+      %          time_ref=TRef,
                 to_be_delivered_queue=ToBeDeliveredQueue,
                 to_be_ack_queue=ToBeAckQueue,
                 delivery_function=DeliveryFun}}.
@@ -167,7 +167,7 @@ handle_call({tcbcast, MessageBody},
     MessageVClock = vclock:increment(Actor, VClock0),
 
     %% Generate message.
-    Msg = {tcbcast, Actor, encode(MessageBody), MessageVClock, Sender},
+    Msg = {tcbcast, Actor, MessageBody, MessageVClock, Sender},
 
     %% Transmit to membership.
     [send(Msg, Peer) || Peer <- Members],
@@ -266,7 +266,7 @@ handle_cast({deliver, MessageActor, MessageBody, MessageVClock} = Msg,
     lager:info("Attempting to deliver message: ~p at ~p", [Msg, Actor]),
 
     %% Check if the message should be delivered and delivers it or not.
-    {VClock, Queue} = trcb:causal_delivery({MessageActor, decode(MessageBody), MessageVClock},
+    {VClock, Queue} = trcb:causal_delivery({MessageActor, MessageBody, MessageVClock},
                                            VClock0,
                                            Queue0,
                                            DeliveryFun),
@@ -342,14 +342,6 @@ send(Msg, Peer) ->
     lager:info("Sending message: ~p to peer: ~p", [Msg, Peer]),
     PeerServiceManager = ?PEER_SERVICE:manager(),
     PeerServiceManager:forward_message(Peer, ?MODULE, Msg).
-
-%% @private
-encode(Message) ->
-    term_to_binary(Message).
-
-%% @private
-decode(Message) ->
-    binary_to_term(Message).
 
 %% @private get current time in milliseconds
 -spec get_timestamp() -> integer().
