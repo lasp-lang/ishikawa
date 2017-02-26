@@ -52,7 +52,7 @@
                 members :: [node()],
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
-                time_ref :: integer(),
+                %time_ref :: integer(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
                 to_be_ack_queue :: [{{actor(), timestamp()}, integer(), [node()]}],
                 delivery_function :: fun()}).
