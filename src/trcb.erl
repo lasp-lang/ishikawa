@@ -38,7 +38,7 @@ causal_delivery({Origin, MessageBody, MessageVClock}=El, VV, Queue, Function) ->
     lager:info("Incoming Clock: ~p", [MessageVClock]),
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            case Function({VV, MessageBody}) of
+            case Function({MessageVClock, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
                     {VV, Queue};
@@ -56,10 +56,10 @@ causal_delivery({Origin, MessageBody, MessageVClock}=El, VV, Queue, Function) ->
 %% Called upon delievery of a new message that could affect the delivery of messages in the queue
 -spec try_to_deliever([{actor(), message(), timestamp()}], {timestamp(), [{actor(), message(), timestamp()}]}, fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
-try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=V, Function) ->
+try_to_deliever([{Origin, MessageBody, MessageVClock}=El | RQueue], {VV, Queue}=V, Function) ->
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            case Function({VV, MessageBody}) of
+            case Function({MessageVClock, MessageBody}) of
                 {error, Reason} ->
                     lager:warning("Failed to handle message: ~p", Reason),
                     try_to_deliever(RQueue, V, Function);
@@ -74,6 +74,7 @@ try_to_deliever([{Origin, MessageVClock, MessageBody}=El | RQueue], {VV, Queue}=
 
 %% @private
 can_be_delivered(MsgVClock, NodeVClock, Origin) ->
+    lager:info("Check for delivery: Msg ~p | Local ~p | Origin ~p", [MsgVClock, NodeVClock, Origin]),
     orddict:fold(
         fun(Key, Value, Acc) ->
             case orddict:find(Key, NodeVClock) of
