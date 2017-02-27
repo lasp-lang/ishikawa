@@ -54,7 +54,7 @@
                 rtm :: timestamp_matrix(),
                 %time_ref :: integer(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
-                to_be_ack_queue :: [{{actor(), timestamp()}, integer(), [node()]}],
+                to_be_ack_queue :: [{timestamp(), actor(), message(), integer(), [node()]}],
                 delivery_function :: fun()}).
 
 %%%===================================================================
@@ -176,7 +176,7 @@ handle_call({tcbcast, MessageBody},
     CurrentTime = get_timestamp(),
 
     %% Add members to the queue of not ack messages and increment the vector clock.
-    ToBeAckQueue = ToBeAckQueue0 ++ [{{Actor, MessageVClock}, CurrentTime, Members}],
+    ToBeAckQueue = ToBeAckQueue0 ++ [{MessageVClock, Actor, MessageBody, CurrentTime, Members}],
 
     {reply, {ok, MessageVClock}, State#state{to_be_ack_queue=ToBeAckQueue, vv=MessageVClock}};
 
@@ -187,12 +187,12 @@ handle_call({tcbstable, Timestamps}, _From, #state{svv=SVV}=State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
-handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
+handle_cast({tcbcast_ack, MessageVClock, Sender},
             #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
-    lager:info("Received message: ~p from ~p", [Msg, Sender]),
+    lager:info("Received message: ~p from ~p", [MessageVClock, Sender]),
 
     %% Get list of waiting ackwnoledgements.
-    {_, Timestamp, Members0} = lists:keyfind({MessageActor, VClock},
+    {_, MessageActor, MessageBody, Timestamp, Members0} = lists:keyfind(MessageVClock,
                                              1,
                                              ToBeAckQueue0),
 
@@ -202,12 +202,12 @@ handle_cast({tcbcast_ack, MessageActor, _Message, VClock, Sender} = Msg,
     ToBeAckQueue = case length(Members) of
         0 ->
             %% None left, remove from ack queue.
-            lists:keydelete({MessageActor, VClock}, 1, ToBeAckQueue0);
+            lists:keydelete(MessageVClock, 1, ToBeAckQueue0);
         _ ->
             %% Still some left, preserve.
-            lists:keyreplace({MessageActor, VClock},
+            lists:keyreplace(MessageVClock,
                              1,
-                             ToBeAckQueue0, {{MessageActor, VClock}, Timestamp, Members})
+                             ToBeAckQueue0, {MessageVClock, MessageActor, MessageBody, Timestamp, Members})
     end,
 
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue}};
@@ -243,7 +243,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             ToBeDeliveredQueue = ToBeDeliveredQueue0  ++ [{MessageActor, MessageBody, MessageVClock}],
 
             %% Generate message.
-            MessageAck = {tcbcast_ack, MessageActor, MessageBody, MessageVClock, Actor},
+            MessageAck = {tcbcast_ack, MessageVClock, Actor},
 
             %% Send ack back to message sender.
             send(MessageAck, Sender),
@@ -252,7 +252,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             gen_server:cast(?MODULE, {deliver, MessageActor, MessageBody, MessageVClock}),
 
             %% Add members to the queue of not ack messages and increment the vector clock.
-            ToBeAckQueue = ToBeAckQueue0 ++ [{{MessageActor, MessageVClock}, CurrentTime, ToMembers}],
+            ToBeAckQueue = ToBeAckQueue0 ++ [{MessageVClock, MessageActor, MessageBody, CurrentTime, ToMembers}],
 
             {noreply, State#state{to_be_ack_queue=ToBeAckQueue, to_be_delivered_queue=ToBeDeliveredQueue}}
     end;
@@ -299,17 +299,17 @@ handle_cast(Msg, State) ->
 handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = State) ->
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
-        fun({{MessageActor, VClock} = Msg, Timestamp0, MembersList}, ToBeAckQueue) ->
+        fun({MessageVClock, MessageActor, MessageBody, Timestamp0, MembersList}, ToBeAckQueue) ->
             case MembersList =/= [] andalso (Now - Timestamp0 > ?WAIT_TIME_BEFORE_RESEND) of
                 true ->
-                    Message1 = {tcbcast, MessageActor, Msg, VClock, Actor},
+                    Message1 = {tcbcast, MessageActor, MessageBody, MessageVClock, Actor},
                     %% Retransmit to membership.
                     %% TODO: Only retransmit where it's needed.
                     [send(Message1, Peer) || Peer <- MembersList],
-                    lists:keyreplace({MessageActor, VClock},
+                    lists:keyreplace(MessageVClock,
                                      1,
                                      ToBeAckQueue,
-                                     {{MessageActor, VClock}, get_timestamp(), MembersList});
+                                     {MessageVClock, MessageActor, MessageBody, get_timestamp(), MembersList});
                 false ->
                     %% Do nothing.
                     ToBeAckQueue
