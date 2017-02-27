@@ -231,7 +231,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
 
             {noreply, State#state{to_be_ack_queue=ToBeAckQueue, to_be_delivered_queue=ToBeDeliveredQueue}}
     end;
-    
+
 handle_cast({tcbcast_ack, MessageVClock, Sender},
             #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
     lager:info("Received message: ~p from ~p", [MessageVClock, Sender]),
