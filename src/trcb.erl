@@ -38,15 +38,10 @@ causal_delivery({Origin, MessageBody, MessageVClock}=El, VV, Queue, Function) ->
     lager:info("Incoming Clock: ~p", [MessageVClock]),
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            case Function({MessageVClock, MessageBody}) of
-                {error, Reason} ->
-                    lager:warning("Failed to handle message: ~p", Reason),
-                    {VV, Queue};
-                ok ->
-                    NewVV = vclock:increment(Origin, VV),
-                    NewQueue = lists:delete(El, Queue),
-                    try_to_deliever(Queue, {NewVV, NewQueue}, Function)
-            end;
+            Function({MessageVClock, MessageBody}),
+            NewVV = vclock:increment(Origin, VV),
+            NewQueue = lists:delete(El, Queue),
+            try_to_deliever(NewQueue, {NewVV, NewQueue}, Function);
         false ->
             lager:info("Message shouldn't be delivered: queueing."),
             {VV, Queue}
@@ -59,15 +54,10 @@ try_to_deliever([], {VV, Queue}, _) -> {VV, Queue};
 try_to_deliever([{Origin, MessageBody, MessageVClock}=El | RQueue], {VV, Queue}=V, Function) ->
     case can_be_delivered(MessageVClock, VV, Origin) of
         true ->
-            case Function({MessageVClock, MessageBody}) of
-                {error, Reason} ->
-                    lager:warning("Failed to handle message: ~p", Reason),
-                    try_to_deliever(RQueue, V, Function);
-                ok ->
-                    NewVV = vclock:increment(Origin, VV),
-                    Queue1 = lists:delete(El, Queue),
-                    try_to_deliever(RQueue, {NewVV, Queue1}, Function)
-            end;
+            Function({MessageVClock, MessageBody}),
+            NewVV = vclock:increment(Origin, VV),
+            NewQueue = lists:delete(El, Queue),
+            try_to_deliever(NewQueue, {NewVV, NewQueue}, Function);
         false ->
             try_to_deliever(RQueue, V, Function)
     end.
