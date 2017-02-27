@@ -295,11 +295,9 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = State) ->
-    lager:info("Checking for resend ~p", [ToBeAckQueue0]),
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
         fun({MessageVClock, MessageActor, MessageBody, Timestamp0, MembersList}, ToBeAckQueue) ->
-            lager:info("Now ~p | Timestamp ~p | Diff ~p", [Now, Timestamp0, Now - Timestamp0]),
             case (Now - Timestamp0) > ?WAIT_TIME_BEFORE_RESEND of
                 true ->
                     Message1 = {tcbcast, MessageActor, MessageBody, MessageVClock, Actor},
