@@ -52,7 +52,6 @@
                 members :: [node()],
                 svv :: timestamp(),
                 rtm :: timestamp_matrix(),
-                %time_ref :: integer(),
                 to_be_delivered_queue :: [{actor(), message(), timestamp()}],
                 to_be_ack_queue :: [{timestamp(), actor(), message(), integer(), [node()]}],
                 delivery_function :: fun()}).
@@ -135,14 +134,13 @@ init([DeliveryFun]) ->
     {ok, Members} = ?PEER_SERVICE:members(),
     lager:info("Initial membership: ~p", [Members]),
 
-    %{_, TRef} = timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend),
+    schedule_resend(),
 
     {ok, #state{actor=Actor,
                 vv=VClock,
                 members=Members,
                 svv=SVV,
                 rtm=RTM,
-      %          time_ref=TRef,
                 to_be_delivered_queue=ToBeDeliveredQueue,
                 to_be_ack_queue=ToBeAckQueue,
                 delivery_function=DeliveryFun}}.
@@ -317,6 +315,9 @@ handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = S
         end,
         ToBeAckQueue0,
         ToBeAckQueue0),
+
+    schedule_resend(),
+
     {noreply, State#state{to_be_ack_queue=ToBeAckQueue1}};
 
 handle_info(Msg, State) ->
@@ -361,3 +362,7 @@ already_seen_message(MessageVC, NodeVC, ToBeDeliveredQueue) ->
 %% @private
 in_to_be_delivered_queue(MsgVC, ToBeDeliveredQueue) ->
     lists:keymember(MsgVC, 3, ToBeDeliveredQueue).
+
+%% @private
+schedule_resend() ->
+    timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend).
