@@ -88,8 +88,8 @@ start_link() ->
 -spec update(term()) -> ok.
 update(State) ->
     Members = ?PEER_SERVICE:decode(State),
-    OtherMembers = Members -- [myself()],
-    gen_server:cast(?MODULE, {membership, OtherMembers}).
+    lager:info("Membership changed ~p", [Members]),
+    gen_server:cast(?MODULE, {membership, without_me(Members)}).
 
 %%% gen_server callbacks
 %%%===================================================================
@@ -132,13 +132,12 @@ init([DeliveryFun]) ->
 
     %% Add initial members.
     {ok, Members} = ?PEER_SERVICE:members(),
-    lager:info("Initial membership: ~p", [Members]),
 
     schedule_resend(),
 
     {ok, #state{actor=Actor,
                 vv=VClock,
-                members=Members,
+                members=without_me(Members),
                 svv=SVV,
                 rtm=RTM,
                 to_be_delivered_queue=ToBeDeliveredQueue,
@@ -163,6 +162,7 @@ handle_call({tcbcast, MessageBody},
 
     %% Increment vclock.
     MessageVClock = vclock:increment(Actor, VClock0),
+    lager:info("Sending ~p to ~p", [MessageVClock, Members]),
 
     %% Generate message.
     Msg = {tcbcast, Actor, MessageBody, MessageVClock, Sender},
@@ -200,7 +200,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             {noreply, State};
         false ->
             %% Generate list of peers that need the message.
-            ToMembers = Members -- lists:flatten([Sender, Actor, MessageActor]),
+            ToMembers = Members -- lists:flatten([Sender, MessageActor]),
             lager:info("Broadcasting message to peers: ~p", [ToMembers]),
 
             %% Generate message.
@@ -295,10 +295,12 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = State) ->
+    lager:info("Checking for resend ~p", [ToBeAckQueue0]),
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
         fun({MessageVClock, MessageActor, MessageBody, Timestamp0, MembersList}, ToBeAckQueue) ->
-            case MembersList =/= [] andalso (Now - Timestamp0 > ?WAIT_TIME_BEFORE_RESEND) of
+            lager:info("Now ~p | Timestamp ~p | Diff ~p", [Now, Timestamp0, Now - Timestamp0]),
+            case (Now - Timestamp0) > ?WAIT_TIME_BEFORE_RESEND of
                 true ->
                     Message1 = {tcbcast, MessageActor, MessageBody, MessageVClock, Actor},
                     %% Retransmit to membership.
@@ -314,7 +316,8 @@ handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = S
             end
         end,
         ToBeAckQueue0,
-        ToBeAckQueue0),
+        ToBeAckQueue0
+    ),
 
     schedule_resend(),
 
@@ -366,3 +369,7 @@ in_to_be_delivered_queue(MsgVC, ToBeDeliveredQueue) ->
 %% @private
 schedule_resend() ->
     timer:send_after(?WAIT_TIME_BEFORE_CHECK_RESEND, check_resend).
+
+%% @private
+without_me(Members) ->
+    Members -- [myself()].
