@@ -65,23 +65,20 @@ try_to_deliever([{Origin, MessageBody, MessageVClock}=El | RQueue], {VV, Queue}=
 %% @private
 can_be_delivered(MsgVClock, NodeVClock, Origin) ->
     lager:info("Check for delivery: Msg ~p | Local ~p | Origin ~p", [MsgVClock, NodeVClock, Origin]),
-    {Count, CanBe} = orddict:fold(
-        fun(Key, Value, {C, Acc}) ->
+    orddict:fold(
+        fun(Key, Value, Acc) ->
             case orddict:find(Key, NodeVClock) of
                 {ok, NodeVCValue} ->
-                    Acc1 = case Key =:= Origin of
+                    case Key =:= Origin of
                         true ->
                             Acc andalso (Value =:= NodeVCValue + 1);
                         false ->
                             Acc andalso (Value =< NodeVCValue)
-                    end,
-                    {C, Acc1};
+                    end;
                 _ ->
-                    {C + 1, Value == 1 andalso Acc}
+                    Key == Origin andalso Value == 1 andalso Acc
             end
         end,
-        {0, true},
+        true,
         MsgVClock
-    ),
-
-    CanBe andalso Count =< 1.
+    ).
