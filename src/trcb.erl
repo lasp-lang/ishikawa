@@ -84,4 +84,4 @@ can_be_delivered(MsgVClock, NodeVClock, Origin) ->
         MsgVClock
     ),
 
-    CanBe andalso Count <= 1;
+    CanBe andalso Count =< 1.
