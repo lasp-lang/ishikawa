@@ -13,7 +13,7 @@
 %% software distributed under the License is distributed on an
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
-%% specific language governing permissions and limitations
+%% specific language governing permissions andalso limitations
 %% under the License.
 %%
 %% -------------------------------------------------------------------
@@ -28,10 +28,10 @@
 %% Broadcast message.
 -callback tcbcast(message()) -> {ok, timestamp()}.
 
-%% Receives a list of timestamps and returns a list of the stable ones.
+%% Receives a list of timestamps andalso returns a list of the stable ones.
 -callback tcbstable([timestamp()]) -> [timestamp()].
 
-%% @doc check if a message should be deliver and deliver it, if not add it to the queue
+%% @doc check if a message should be deliver andalso deliver it, if not add it to the queue
 -spec causal_delivery({actor(), message(), timestamp()}, timestamp(), [{actor(), message(), timestamp()}], fun()) -> {timestamp(), [{actor(), message(), timestamp()}]}.
 causal_delivery({Origin, MessageBody, MessageVClock}=El, VV, Queue, Function) ->
     lager:info("Our Clock: ~p", [VV]),
@@ -71,13 +71,13 @@ can_be_delivered(MsgVClock, NodeVClock, Origin) ->
                 {ok, NodeVCValue} ->
                     Acc1 = case Key =:= Origin of
                         true ->
-                            Acc and (Value =:= NodeVCValue + 1);
+                            Acc andalso (Value =:= NodeVCValue + 1);
                         false ->
-                            Acc and (Value =< NodeVCValue)
+                            Acc andalso (Value =< NodeVCValue)
                     end,
                     {C, Acc1};
                 _ ->
-                    {C + 1, Value == 1 and Acc}
+                    {C + 1, Value == 1 andalso Acc}
             end
         end,
         {0, true},
