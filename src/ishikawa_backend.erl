@@ -232,7 +232,7 @@ handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
 
 handle_cast({tcbcast_ack, MessageVClock, Sender},
             #state{to_be_ack_queue=ToBeAckQueue0} = State) ->
-    lager:info("Received message: ~p from ~p", [MessageVClock, Sender]),
+    lager:info("Received ack message: ~p from ~p", [MessageVClock, Sender]),
 
     %% Get list of waiting ackwnoledgements.
     {_, MessageActor, MessageBody, Timestamp, Members0} = lists:keyfind(MessageVClock,
