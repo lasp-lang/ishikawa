@@ -56,6 +56,8 @@
                 to_be_ack_queue :: [{timestamp(), actor(), message(), integer(), [node()]}],
                 delivery_function :: fun()}).
 
+-type state_t() :: #state{}.
+
 %%%===================================================================
 %%% trcb callbacks
 %%%===================================================================
@@ -95,7 +97,7 @@ update(State) ->
 %%%===================================================================
 
 %% @private
--spec init(list()) -> {ok, #state{}}.
+-spec init(list()) -> {ok, state_t()}.
 init([]) ->
     DeliveryFun = fun(Msg) ->
         lager:warning("Message delivered: ~p", [Msg]),
@@ -145,8 +147,8 @@ init([DeliveryFun]) ->
                 delivery_function=DeliveryFun}}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, state_t()) ->
+    {reply, term(), state_t()}.
 
 handle_call({tcbdelivery, DeliveryFunction}, _From, State) ->
     {reply, ok, State#state{delivery_function=DeliveryFunction}};
@@ -193,7 +195,7 @@ handle_call({tcbstable, Timestamps}, _From, #state{svv=SVV}=State) ->
     {reply, StableTimestamps, State}.
 
 %% @private
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), state_t()) -> {noreply, state_t()}.
 handle_cast({tcbcast, MessageActor, MessageBody, MessageVClock, Sender} = Msg0,
             #state{actor=Actor,
                    to_be_ack_queue=ToBeAckQueue0,
@@ -302,7 +304,7 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_info(term(), state_t()) -> {noreply, state_t()}.
 handle_info(check_resend, #state{actor=Actor, to_be_ack_queue=ToBeAckQueue0} = State) ->
     Now = get_timestamp(),
     ToBeAckQueue1 = lists:foldl(
@@ -335,12 +337,12 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec terminate(term(), #state{}) -> term().
+-spec terminate(term(), state_t()) -> term().
 terminate(_Reason, _State) ->
     ok.
 
 %% @private
--spec code_change(term() | {down, term()}, #state{}, term()) -> {ok, #state{}}.
+-spec code_change(term() | {down, term()}, state_t(), term()) -> {ok, state_t()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

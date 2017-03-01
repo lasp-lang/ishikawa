@@ -1,21 +1,14 @@
-{application, ishikawa,
- [
-  {description, "Tagged reliable causal broadcast."},
-  {vsn, "0.0.1"},
-  {registered, []},
-  {maintainers,["Christopher S. Meiklejohn"]},
-  {included_applications,[]},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  crypto,
-                  lager,
-                  time_compat,
-                  rand_compat,
-                  partisan
-                 ]},
-  {mod, {ishikawa_app, []}},
-  {modules, []},
-  {env, [
-         {ishikawa, "data"}]}
- ]}.
+{application,ishikawa,
+             [{description,"Tagged reliable causal broadcast."},
+              {vsn,"0.0.0"},
+              {registered,[]},
+              {maintainers,["Georges Younes","Chris Meiklejohn",
+                            "Vitor Enes Duarte"]},
+              {included_applications,[]},
+              {applications,[kernel,stdlib,crypto,lager,time_compat,
+                             rand_compat,partisan]},
+              {mod,{ishikawa_app,[]}},
+              {modules,[]},
+              {env,[{ishikawa,"data"}]},
+              {licenses,["Apache 2.0"]},
+              {links,[{"Github","https://github.com/lasp-lang/ishikawa"}]}]}.
