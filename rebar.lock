@@ -1,10 +1,7 @@
 [{<<"acceptor_pool">>,{pkg,<<"acceptor_pool">>,<<"1.0.0-rc.0">>},1},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.2.4">>},0},
- {<<"partisan">>,
-  {git,"https://github.com/lasp-lang/partisan",
-       {ref,"09b2b3f6990056c7513ce582bbbaee3ec1286f45"}},
-  0},
+ {<<"partisan">>,{pkg,<<"partisan">>,<<"0.2.0">>},0},
  {<<"rand_compat">>,{pkg,<<"rand_compat">>,<<"0.0.1">>},0},
  {<<"time_compat">>,{pkg,<<"time_compat">>,<<"0.0.1">>},0},
- {<<"types">>,{pkg,<<"types">>,<<"0.0.1">>},1}].
+ {<<"types">>,{pkg,<<"types">>,<<"0.0.4">>},1}].
