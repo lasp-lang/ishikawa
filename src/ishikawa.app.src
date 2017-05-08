@@ -1,6 +1,6 @@
 {application,ishikawa,
              [{description,"Tagged reliable causal broadcast."},
-              {vsn,"0.0.1"},
+              {vsn,"0.0.3"},
               {registered,[]},
               {maintainers,["Georges Younes","Chris Meiklejohn",
                             "Vitor Enes Duarte"]},
