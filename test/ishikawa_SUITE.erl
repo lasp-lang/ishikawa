@@ -96,32 +96,32 @@ causal_delivery_test1(Config) ->
     %% Verify membership.
     %%
     VerifyFun = fun({Name, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
+      {ok, Members} = rpc:call(Node, Manager, members, []),
 
-            %% If this node is a server, it should know about all nodes.
-            SortedNodes = case lists:member(Name, Servers) of
-                true ->
-                    lists:usort([N || {_, N} <- Nodes]);
-                false ->
-                    %% Otherwise, it should only know about the server
-                    %% and itself.
-                    lists:usort(
-                        lists:map(
-                            fun(Server) ->
-                                proplists:get_value(Server, Nodes)
-                            end,
-                            Servers
-                        ) ++ [Node]
-                    )
-            end,
+        %% If this node is a server, it should know about all nodes.
+        SortedNodes = case lists:member(Name, Servers) of
+          true ->
+            lists:usort([N || {_, N} <- Nodes]);
+          false ->
+            %% Otherwise, it should only know about the server
+            %% and itself.
+            lists:usort(
+              lists:map(
+                fun(Server) ->
+                  proplists:get_value(Server, Nodes)
+                end,
+                Servers
+              ) ++ [Node]
+            )
+        end,
 
-            SortedMembers = lists:usort(Members),
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
-            end
+        SortedMembers = lists:usort(Members),
+        case SortedMembers =:= SortedNodes of
+          true ->
+            ok;
+          false ->
+            ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+        end
     end,
 
     %% Verify the membership is correct.
@@ -135,15 +135,13 @@ causal_delivery_test1(Config) ->
     Self = self(),
 
     lists:foreach(fun({_ClientName, ClientNode}) ->
-                        DeliveryFun = fun({_VV, Msg}) ->
-                                              Self ! {delivery, ClientNode, Msg},
-                                              ok
-                                      end,
-                        ok = rpc:call(ClientNode,
-                                      ishikawa,
-                                      tcbdelivery,
-                                      [DeliveryFun])
-                  end, ClientNodes),
+      DeliveryFun = fun({_VV, Msg}) ->
+        Self ! {delivery, ClientNode, Msg},
+        ok
+      end,
+      ok = rpc:call(ClientNode, ishikawa, tcbdelivery, [DeliveryFun])
+    end,
+    ClientNodes),
 
     %% Send a series of messages.
     {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
@@ -151,18 +149,16 @@ causal_delivery_test1(Config) ->
     
     %% Ensure each node receives a message.
     lists:foreach(fun({_ClientName, ClientNode}) ->
-                        receive
-                            {delivery, ClientNode, 1} ->
-                                ok;
-                            {delivery, ClientNode, Message} ->
-                                ct:fail("Client ~p received incorrect message: ~p",
-                                        [ClientNode, Message])
-                        after
-                            1000 ->
-                                ct:fail("Client ~p didn't receive message!",
-                                        [ClientNode])
-                        end
-                  end, ClientNodes),
+      receive
+        {delivery, ClientNode, 1} ->
+          ok;
+        {delivery, ClientNode, Message} ->
+          ct:fail("Client ~p received incorrect message: ~p", [ClientNode, Message])
+      after
+        1000 ->
+          ct:fail("Client ~p didn't receive message!", [ClientNode])
+      end
+    end, ClientNodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -185,17 +181,17 @@ causal_delivery_test2(Config) ->
     %% Verify membership.
     %%
     VerifyFun = fun({_Name, Node}) ->
-            {ok, Members} = rpc:call(Node, Manager, members, []),
+      {ok, Members} = rpc:call(Node, Manager, members, []),
 
-            %% If this node is a server, it should know about all nodes.
-            SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
-            SortedMembers = lists:usort(Members) -- [Node],
-            case SortedMembers =:= SortedNodes of
-                true ->
-                    ok;
-                false ->
-                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
-            end
+      %% If this node is a server, it should know about all nodes.
+      SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
+      SortedMembers = lists:usort(Members) -- [Node],
+      case SortedMembers =:= SortedNodes of
+        true ->
+          ok;
+        false ->
+          ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+      end
     end,
 
     %% Verify the membership is correct.
@@ -205,38 +201,40 @@ causal_delivery_test2(Config) ->
 
     %% Add for each node an empty set to record delivered messages
     lists:foreach(fun({Name, _Node}) ->
-                        ets:insert(ETS, {Name, []})
-                  end, Nodes),
+      ets:insert(ETS, {Name, []})
+    end,
+    Nodes),
 
     Receiver = spawn(?MODULE, fun_receive, [ETS]),
 
     lists:foreach(fun({Name, Node}) ->
-                        DeliveryFun = fun({VV, _Msg}) ->
-                                              lager:info("DELIVERY ~p ~p", [VV, Name]),
-                                              Receiver ! {delivery, Name, VV},
-                                              ok
-                                      end,
-                        ok = rpc:call(Node,
-                                      ishikawa,
-                                      tcbdelivery,
-                                      [DeliveryFun])
-                  end, Nodes),
+      DeliveryFun = fun({VV, _Msg}) ->
+        lager:info("DELIVERY ~p ~p", [VV, Name]),
+        Receiver ! {delivery, Name, VV},
+        ok
+      end,
+      ok = rpc:call(Node,
+                    ishikawa,
+                    tcbdelivery,
+                    [DeliveryFun])
+    end,
+    Nodes),
 
 %% For each node, check if all msgs were delivered
-
+%% TODO
 
 %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
     lists:foreach(fun({_Name, Node}) ->
-                        spawn(?MODULE, fun_send, [Node, rand:uniform(5)])
-                  end, Nodes),
+      spawn(?MODULE, fun_send, [Node, rand:uniform(5)])
+    end, Nodes),
 
+    %% Instead if waiting, send stop in fun_send(_Node, 0)...
     timer:sleep(10000),
 
     lists:foreach(fun({Name, _Node}) ->
-                        [{_, DelMsgQxx}] = ets:lookup(ETS, Name),
-                        ct:pal("ETS Name ~p Queue ~p", [Name, DelMsgQxx])
-                  end, Nodes),
-
+      [{_, DelMsgQxx}] = ets:lookup(ETS, Name),
+      ct:pal("ETS Name ~p Queue ~p", [Name, DelMsgQxx])
+    end, Nodes),
 
     %% For each node, check if the order of the VV delivered respects causal delivery
     lists:foreach(
@@ -319,77 +317,88 @@ start(_Case, _Config, Options) ->
     
     %% Start all nodes.
     InitializerFun = fun(Name) ->
-                            ct:pal("Starting node: ~p", [Name]),
+      ct:pal("Starting node: ~p", [Name]),
 
-                            NodeConfig = [{monitor_master, true},
-                                          {startup_functions, [{code, set_path, [codepath()]}]}],
+      NodeConfig = [{monitor_master, true}, {startup_functions, [{code, set_path, [codepath()]}]}],
 
-                            case ct_slave:start(Name, NodeConfig) of
-                                {ok, Node} ->
-                                    {Name, Node};
-                                Error ->
-                                    ct:fail(Error)
-                            end
-                     end,
+      case ct_slave:start(Name, NodeConfig) of
+          {ok, Node} ->
+              {Name, Node};
+          Error ->
+              ct:fail(Error)
+      end
+     end,
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
     LoaderFun = fun({_Name, Node}) ->
-                            ct:pal("Loading applications on node: ~p", [Node]),
+      ct:pal("Loading applications on node: ~p", [Node]),
 
-                            PrivDir = code:priv_dir(?APP),
+      PrivDir = code:priv_dir(?APP),
 
-                            NodeDir = filename:join([PrivDir, "lager", Node]),
+      NodeDir = filename:join([PrivDir, "lager", Node]),
 
-                            ct:pal("P ~p N ~p", [PrivDir, NodeDir]),
+      %% Manually force sasl loading, and disable the logger.   
+      ct:pal("P ~p N ~p", [PrivDir, NodeDir]),
+  
+      ok = rpc:call(Node, application, load, [sasl]),   
 
-                            ok = rpc:call(Node, application, load, [ishikawa]),
+      ok = rpc:call(Node, application, set_env, [sasl, sasl_error_logger, false]),    
 
-                            ok = rpc:call(Node, application, set_env, [lager,
-                                                                       log_root,
-                                                                       NodeDir])
-                     end,
-    lists:map(LoaderFun, Nodes),
+      ok = rpc:call(Node, application, start, [sasl]),    
+
+      ok = rpc:call(Node, application, load, [partisan]),   
+
+      ok = rpc:call(Node, application, load, [ishikawa]),    
+
+      ok = rpc:call(Node, application, load, [lager]),   
+
+      ok = rpc:call(Node, application, set_env, [sasl, sasl_error_logger, false]),
+
+      ok = rpc:call(Node, application, set_env, [lager, log_root, NodeDir])
+   end,
+  
+  lists:map(LoaderFun, Nodes),
 
     %% Configure settings.
     ConfigureFun = fun({Name, Node}) ->
-            %% Configure the peer service.
-            PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-            ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
-            ok = rpc:call(Node, partisan_config, set,
-                          [partisan_peer_service_manager, PeerService]),
+      %% Configure the peer service.
+      PeerService = proplists:get_value(partisan_peer_service_manager, Options),
+      ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+      ok = rpc:call(Node, partisan_config, set,
+        [partisan_peer_service_manager, PeerService]),
 
-            MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
-            ok = rpc:call(Node, partisan_config, set,
-                          [max_active_size, MaxActiveSize]),
+      MaxActiveSize = proplists:get_value(max_active_size, Options, 5),
+      ok = rpc:call(Node, partisan_config, set,
+        [max_active_size, MaxActiveSize]),
 
-            Servers = proplists:get_value(servers, Options, []),
-            Clients = proplists:get_value(clients, Options, []),
+      Servers = proplists:get_value(servers, Options, []),
+      Clients = proplists:get_value(clients, Options, []),
 
-            %% Configure servers.
-            case lists:member(Name, Servers) of
-                true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, server]);
-                false ->
-                    ok
-            end,
+      %% Configure servers.
+      case lists:member(Name, Servers) of
+        true ->
+          ok = rpc:call(Node, partisan_config, set, [tag, server]);
+        false ->
+          ok
+      end,
 
-            %% Configure clients.
-            case lists:member(Name, Clients) of
-                true ->
-                    ok = rpc:call(Node, partisan_config, set, [tag, client]);
-                false ->
-                    ok
-            end
+      %% Configure clients.
+      case lists:member(Name, Clients) of
+        true ->
+          ok = rpc:call(Node, partisan_config, set, [tag, client]);
+        false ->
+          ok
+      end
     end,
     lists:map(ConfigureFun, Nodes),
 
     ct:pal("Starting nodes."),
 
     StartFun = fun({_Name, Node}) ->
-                        %% Start partisan.
-                        {ok, _} = rpc:call(Node, application, ensure_all_started, [ishikawa])
-                   end,
+      %% Start partisan.
+      {ok, _} = rpc:call(Node, application, ensure_all_started, [ishikawa])
+    end,
     lists:map(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
@@ -412,58 +421,58 @@ codepath() ->
 %% node to correctly compute the overlay.
 %%
 cluster(Node, Nodes, Manager) when is_list(Nodes) ->
-    OtherNodes = case Manager of
-                     partisan_default_peer_service_manager ->
-                         Nodes -- [Node];
-                     partisan_client_server_peer_service_manager ->
-                         case Node of
-                             {server, _} ->
-                                 Nodes -- [Node];
-                             _ ->
-                                 Server = lists:keyfind(server, 1, Nodes),
-                                 [Server]
-                         end;
-                     partisan_hyparview_peer_service_manager ->
-                         case Node of
-                             {server, _} ->
-                                 [];
-                             _ ->
-                                 Server = lists:keyfind(server, 1, Nodes),
-                                 [Server]
-                         end
-                 end,
-    lists:map(fun(OtherNode) -> join(Node, OtherNode) end, OtherNodes).
+  OtherNodes = case Manager of
+    partisan_default_peer_service_manager ->
+      Nodes -- [Node];
+    partisan_client_server_peer_service_manager ->
+      case Node of
+        {server, _} ->
+          Nodes -- [Node];
+        _ ->
+          Server = lists:keyfind(server, 1, Nodes),
+          [Server]
+      end;
+    partisan_hyparview_peer_service_manager ->
+      case Node of
+        {server, _} ->
+          [];
+        _ ->
+          Server = lists:keyfind(server, 1, Nodes),
+          [Server]
+      end
+  end,
+  lists:map(fun(OtherNode) -> join(Node, OtherNode) end, OtherNodes).
 
 join({_, Node}, {_, OtherNode}) ->
-    PeerPort = rpc:call(OtherNode,
-                        partisan_config,
-                        get,
-                        [peer_port, ?PEER_PORT]),
-    ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
-    ok = rpc:call(Node,
-                  partisan_peer_service,
-                  join,
-                  [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
+  PeerPort = rpc:call(OtherNode,
+    partisan_config,
+    get,
+    [peer_port, ?PEER_PORT]),
+  ct:pal("Joining node: ~p to ~p at port ~p", [Node, OtherNode, PeerPort]),
+  ok = rpc:call(Node,
+    partisan_peer_service,
+    join,
+    [{OtherNode, {127, 0, 0, 1}, PeerPort}]).
 
 %% @private
 stop(Nodes) ->
-    StopFun = fun({Name, _Node}) ->
-        case ct_slave:stop(Name) of
-            {ok, _} ->
-                ok;
-            Error ->
-                ct:fail(Error)
-        end
-    end,
-    lists:map(StopFun, Nodes),
-    ok.
+  StopFun = fun({Name, _Node}) ->
+    case ct_slave:stop(Name) of
+      {ok, _} ->
+        ok;
+      Error ->
+        ct:fail(Error)
+    end
+  end,
+  lists:map(StopFun, Nodes),
+  ok.
 
 %% @private
 node_list(ClientNumber) ->
-    Clients = client_list(ClientNumber),
-    [server | Clients].
+  Clients = client_list(ClientNumber),
+  [server | Clients].
 
 %% @private
 client_list(0) -> [];
 client_list(N) -> lists:append(client_list(N - 1),
-                               [list_to_atom("client_" ++ integer_to_list(N))]).
+  [list_to_atom("client_" ++ integer_to_list(N))]).
