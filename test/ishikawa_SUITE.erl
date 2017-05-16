@@ -37,7 +37,9 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 
--define(APP, partisan).
+
+-include("ishikawa.hrl").
+
 -define(CLIENT_NUMBER, 3).
 -define(NODES_NUMBER, 5).
 -define(PEER_PORT, 9000).
@@ -202,15 +204,16 @@ causal_delivery_test2(Config) ->
     ETS = ets:new(delMsgQ, [ordered_set, public]),
 
     %% Add for each node an empty set to record delivered messages
-    lists:foreach(fun({_Name, Node}) ->
-                        ets:insert(ETS, {Node, []})
+    lists:foreach(fun({Name, _Node}) ->
+                        ets:insert(ETS, {Name, []})
                   end, Nodes),
-    
-    %% Configure the delivery function on each node to send the messages
-    lists:foreach(fun({_Name, Node}) ->
+
+    Receiver = spawn(?MODULE, fun_receive, [ETS]),
+
+    lists:foreach(fun({Name, Node}) ->
                         DeliveryFun = fun({VV, _Msg}) ->
-                                              [{_, DelMsgQ}] = ets:lookup(ETS, Node),
-                                              ets:insert(ETS, {Node, DelMsgQ ++ [VV]}),
+                                              lager:info("DELIVERY ~p ~p", [VV, Name]),
+                                              Receiver ! {delivery, Name, VV},
                                               ok
                                       end,
                         ok = rpc:call(Node,
@@ -219,22 +222,26 @@ causal_delivery_test2(Config) ->
                                       [DeliveryFun])
                   end, Nodes),
 
-    %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
+%% For each node, check if all msgs were delivered
+
+
+%% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
     lists:foreach(fun({_Name, Node}) ->
                         spawn(?MODULE, fun_send, [Node, rand:uniform(5)])
                   end, Nodes),
 
-    %% For each node, check if all msgs were delivered
+    timer:sleep(10000),
 
-    lists:foreach(fun({_Name, Node}) ->
-                        [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
-                        ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
+    lists:foreach(fun({Name, _Node}) ->
+                        [{_, DelMsgQxx}] = ets:lookup(ETS, Name),
+                        ct:pal("ETS Name ~p Queue ~p", [Name, DelMsgQxx])
                   end, Nodes),
+
 
     %% For each node, check if the order of the VV delivered respects causal delivery
     lists:foreach(
-      fun({_Name, Node}) ->
-        [{_, DelMsgQ2}] = ets:lookup(ETS, Node),
+      fun({Name, _Node}) ->
+        [{_, DelMsgQ2}] = ets:lookup(ETS, Name),
         lists:foldl(
           fun(I, AccI) ->
             lists:foldl(
@@ -242,14 +249,12 @@ causal_delivery_test2(Config) ->
                 AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2))
               end,
               AccI,
-            lists:seq(I+1, length(DelMsgQ2)-1)) 
+            lists:seq(I+1, length(DelMsgQ2))) 
           end,
           true,
-        lists:seq(1, length(DelMsgQ2)))
+        lists:seq(1, length(DelMsgQ2)-1))
       end,
     Nodes),
-
-
 
     %% Stop nodes.
     stop(Nodes),
@@ -257,11 +262,24 @@ causal_delivery_test2(Config) ->
     ok.
 
 fun_send(_Node, 0) ->
-      timer:sleep(1000);
-    fun_send(Node, Times) ->
-      {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
-      timer:sleep(rand:uniform(5)*1000),
-      fun_send(Node, Times - 1).
+  ok;
+fun_send(Node, Times) ->
+  ct:pal("FUN SEND"),
+  timer:sleep(rand:uniform(5)*1000),
+  {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
+  fun_send(Node, Times - 1).
+
+fun_receive(ETS) ->
+  ct:pal("FUN RECEIVE"),
+  receive
+    {delivery, Name, VV} ->
+      ct:pal("RECEIVED"),
+      [{_, DelMsgQ}] = ets:lookup(ETS, Name),
+      ets:insert(ETS, {Name, DelMsgQ ++ [VV]}),
+      fun_receive(ETS);
+    M ->
+      ct:pal("UNKWONN ~p", [M])
+    end.
 
 %% ===================================================================
 %% Internal functions.
@@ -320,20 +338,13 @@ start(_Case, _Config, Options) ->
                             ct:pal("Loading applications on node: ~p", [Node]),
 
                             PrivDir = code:priv_dir(?APP),
+
                             NodeDir = filename:join([PrivDir, "lager", Node]),
 
-                            %% Manually force sasl loading, and disable the logger.
-                            ok = rpc:call(Node, application, load, [sasl]),
-                            ok = rpc:call(Node, application, set_env,
-                                          [sasl, sasl_error_logger, false]),
-                            ok = rpc:call(Node, application, start, [sasl]),
+                            ct:pal("P ~p N ~p", [PrivDir, NodeDir]),
 
-                            ok = rpc:call(Node, application, load, [partisan]),
                             ok = rpc:call(Node, application, load, [ishikawa]),
-                            ok = rpc:call(Node, application, load, [lager]),
-                            ok = rpc:call(Node, application, set_env, [sasl,
-                                                                       sasl_error_logger,
-                                                                       false]),
+
                             ok = rpc:call(Node, application, set_env, [lager,
                                                                        log_root,
                                                                        NodeDir])
