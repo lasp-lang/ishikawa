@@ -39,6 +39,7 @@
 
 -define(APP, partisan).
 -define(CLIENT_NUMBER, 3).
+-define(NODES_NUMBER, 5).
 -define(PEER_PORT, 9000).
 
 %% ===================================================================
@@ -62,13 +63,15 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 all() ->
-    [causal_delivery_test].
+    [causal_delivery_test1,
+    causal_delivery_test2].
 
 %% ===================================================================
 %% Tests.
 %% ===================================================================
 
-causal_delivery_test(Config) ->
+%% Not very interesting to test causal delivery with a Client/Server star topology 
+causal_delivery_test1(Config) ->
     %% Use the client/server peer service manager.
     Manager = partisan_client_server_peer_service_manager,
 
@@ -142,7 +145,8 @@ causal_delivery_test(Config) ->
 
     %% Send a series of messages.
     {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
-
+    
+    
     %% Ensure each node receives a message.
     lists:foreach(fun({_ClientName, ClientNode}) ->
                         receive
@@ -162,6 +166,98 @@ causal_delivery_test(Config) ->
     stop(Nodes),
 
     ok.
+
+%% Test with full membership
+causal_delivery_test2(Config) ->
+    %% Use the default peer service manager.
+    Manager = partisan_default_peer_service_manager,
+
+    %% Start nodes.
+    Nodes = start(default_manager_test, Config,
+                  [{partisan_peer_service_manager, Manager},
+                   {client_number, ?NODES_NUMBER}]),
+
+    %% Pause for clustering.
+    timer:sleep(1000),
+
+    %% Verify membership.
+    %%
+    VerifyFun = fun({_Name, Node}) ->
+            {ok, Members} = rpc:call(Node, Manager, members, []),
+
+            %% If this node is a server, it should know about all nodes.
+            SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
+            SortedMembers = lists:usort(Members) -- [Node],
+            case SortedMembers =:= SortedNodes of
+                true ->
+                    ok;
+                false ->
+                    ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+            end
+    end,
+
+    %% Verify the membership is correct.
+    lists:foreach(VerifyFun, Nodes),
+
+    ETS = ets:new(delMsgQ, [ordered_set, public]),
+
+    %% Add for each node an empty set to record delivered messages
+    lists:foreach(fun({_Name, Node}) ->
+                        ets:insert(ETS, {Node, []})
+                  end, Nodes),
+    
+    %% Configure the delivery function on each node to send the messages
+    lists:foreach(fun({_Name, Node}) ->
+                        DeliveryFun = fun({VV, _Msg}) ->
+                                              {_, DelMsgQ} = ets:lookup(ETS, Node),
+                                              ets:insert(ETS, {Node, DelMsgQ ++ [VV]}),
+                                              ok
+                                      end,
+                        ok = rpc:call(Node,
+                                      ishikawa,
+                                      tcbdelivery,
+                                      [DeliveryFun])
+                  end, Nodes),
+
+    %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
+    lists:foreach(fun({_Name, Node}) ->
+                        spawn(?MODULE, fun_send, [Node, rand:uniform(5)])
+                  end, Nodes),
+
+    %% For each node, check if all msgs were delivered
+
+
+    %% For each node, check if the order of the VV delivered respects causal delivery
+    lists:foreach(
+      fun({_Name, Node}) ->
+        {_, DelMsgQ2} = ets:lookup(ETS, Node),
+        lists:foldl(
+          fun(I, AccI) ->
+            lists:foldl(
+              fun(J, AccJ) ->
+                AccJ andalso not vclock:descends(lists:nth(), lists:nth())
+              end,
+              AccI,
+            lists:seq(I+1, len(DelMsgQ2)-1)) 
+          end,
+          true,
+        lists:seq(1, len(DelMsgQ2)))
+      end,
+    Nodes),
+
+
+
+    %% Stop nodes.
+    stop(Nodes),
+
+    ok.
+
+fun_send(_Node, 0) ->
+      timer:sleep(1000);
+    fun_send(Node, Times) ->
+      {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
+      timer:sleep(rand:uniform(5)*1000),
+      fun_send(Node, Times - 1).
 
 %% ===================================================================
 %% Internal functions.
@@ -192,7 +288,13 @@ start(_Case, _Config, Options) ->
     {ok, _} = application:ensure_all_started(lager),
 
     ClientNumber = proplists:get_value(client_number, Options, 3),
-    NodeNames = node_list(ClientNumber),
+    NodeNames = case proplists:get_value(partisan_peer_service_manager, Options) of
+      partisan_client_server_peer_service_manager ->
+        node_list(ClientNumber);
+      partisan_default_peer_service_manager ->
+        client_list(ClientNumber)
+    end,
+    
     %% Start all nodes.
     InitializerFun = fun(Name) ->
                             ct:pal("Starting node: ~p", [Name]),
