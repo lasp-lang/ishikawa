@@ -209,7 +209,7 @@ causal_delivery_test2(Config) ->
     %% Configure the delivery function on each node to send the messages
     lists:foreach(fun({_Name, Node}) ->
                         DeliveryFun = fun({VV, _Msg}) ->
-                                              {_, DelMsgQ} = ets:lookup(ETS, Node),
+                                              [{_, DelMsgQ}] = ets:lookup(ETS, Node),
                                               ets:insert(ETS, {Node, DelMsgQ ++ [VV]}),
                                               ok
                                       end,
@@ -226,22 +226,26 @@ causal_delivery_test2(Config) ->
 
     %% For each node, check if all msgs were delivered
 
+    lists:foreach(fun({_Name, Node}) ->
+                        [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
+                        ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
+                  end, Nodes),
 
     %% For each node, check if the order of the VV delivered respects causal delivery
     lists:foreach(
       fun({_Name, Node}) ->
-        {_, DelMsgQ2} = ets:lookup(ETS, Node),
+        [{_, DelMsgQ2}] = ets:lookup(ETS, Node),
         lists:foldl(
           fun(I, AccI) ->
             lists:foldl(
               fun(J, AccJ) ->
-                AccJ andalso not vclock:descends(lists:nth(), lists:nth())
+                AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2))
               end,
               AccI,
-            lists:seq(I+1, len(DelMsgQ2)-1)) 
+            lists:seq(I+1, length(DelMsgQ2)-1)) 
           end,
           true,
-        lists:seq(1, len(DelMsgQ2)))
+        lists:seq(1, length(DelMsgQ2)))
       end,
     Nodes),
 
