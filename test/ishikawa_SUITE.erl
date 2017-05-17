@@ -45,8 +45,8 @@
 -define(MAX_MSG_NUMBER, 5).
 -define(PEER_PORT, 9000).
 
-suite() ->
-    [{timetrap, {seconds, 60}}].
+% suite() ->
+%     [{timetrap, {minutes, 2}}].
 
 %% ===================================================================
 %% common_test callbacks
@@ -69,7 +69,7 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 all() ->
-    [%causal_delivery_test1,
+    [causal_delivery_test1,
     causal_delivery_test2].
 
 %% ===================================================================
@@ -172,7 +172,6 @@ causal_delivery_test1(Config) ->
 %% Test with full membership
 causal_delivery_test2(Config) ->
 
-    lager:info("HEY"),
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
@@ -216,8 +215,7 @@ causal_delivery_test2(Config) ->
     %% create map from name to number of messages
     RandNumMsgToBeSentMap = lists:foldl(
       fun({_Name, Node}, Acc) ->
-        orddict:store(Node, ?MAX_MSG_NUMBER, Acc)
-        %orddict:store(Node, rand:uniform(?MAX_MSG_NUMBER), Acc)
+        orddict:store(Node, rand:uniform(?MAX_MSG_NUMBER), Acc)
       end,
       orddict:new(),
     Nodes),
@@ -246,18 +244,12 @@ causal_delivery_test2(Config) ->
       spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
     end, Nodes),
 
-% timer:sleep(30000),
-
     lists:foreach(fun({_Name, Node}) ->
       [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
       ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
     end, Nodes),
 
-    % loop_until_done(ETS),
-
     fun_ready_to_check(Nodes, ETS),
-
-    % ct:fail("after spawning fun_send"),
 
     %% Stop nodes.
     stop(Nodes),
@@ -268,7 +260,6 @@ fun_send(_Node, 0) ->
   ok;
 fun_send(Node, Times) ->
   ct:pal("FUN SEND"),
-  %timer:sleep(rand:uniform(5)*1000),
   timer:sleep(1000),
   {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
   fun_send(Node, Times - 1).
@@ -287,7 +278,6 @@ fun_receive(ETS, Nodes, TotalMessages, TotalReceived, Runner) ->
       case TotalMessages =:= TotalReceived1 of
         true ->
           ct:pal("DONE SENT"),
-          % fun_check_delivery(Nodes, ETS);
           Runner ! done;
         false ->
           fun_receive(ETS, Nodes, TotalMessages, TotalReceived1, Runner)
@@ -297,8 +287,8 @@ fun_receive(ETS, Nodes, TotalMessages, TotalReceived, Runner) ->
     end.
 
 fun_check_delivery(Nodes, ETS) ->
-      ct:pal("fun_check_delivery"),
-
+  
+  ct:pal("fun_check_delivery"),
   lists:foreach(
     fun({_Name, Node}) ->
       [{_, DelMsgQ2}] = ets:lookup(ETS, Node),
@@ -306,9 +296,7 @@ fun_check_delivery(Nodes, ETS) ->
         fun(I, AccI) ->
           lists:foldl(
             fun(J, AccJ) ->
-              XXX = vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2)),
-              ct:pal("Value should be false, it is ~p", [XXX]),
-              AccJ andalso not XXX
+              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2))
             end,
             AccI,
           lists:seq(I+1, length(DelMsgQ2))) 
@@ -316,17 +304,7 @@ fun_check_delivery(Nodes, ETS) ->
         true,
       lists:seq(1, length(DelMsgQ2)-1))
     end,
-  Nodes).%,
-  % ets:insert(ETS, {done, 1}).
-
-% loop_until_done(ETS) ->
-%   [{_, Done}] = ets:lookup(ETS, done),
-%   case Done =:= 1 of
-%     true ->
-%       ok;
-%     false ->
-%       loop_until_done(ETS)
-%   end.
+  Nodes).
 
 fun_ready_to_check(Nodes, ETS) ->
   receive
