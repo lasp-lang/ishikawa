@@ -41,7 +41,7 @@
 -include("ishikawa.hrl").
 
 -define(CLIENT_NUMBER, 3).
--define(NODES_NUMBER, 17).
+-define(NODES_NUMBER, 7).
 -define(MAX_MSG_NUMBER, 5).
 -define(PEER_PORT, 9000).
 
@@ -83,11 +83,9 @@ causal_delivery_test1(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    % Servers = [server],
     Servers = node_list(1, "server"),
 
     %% Specify clients.
-    % Clients = client_list(?CLIENT_NUMBER),
     Clients = node_list(?CLIENT_NUMBER, "client"), 
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
@@ -224,15 +222,12 @@ causal_delivery_test2(Config) ->
       orddict:new(),
     Nodes),
 
-    ct:pal("MAP ~p", [RandNumMsgToBeSentMap]),
-
     TotNumMsgToRecv = lists:sum([V || {_, V} <- RandNumMsgToBeSentMap]) * ?NODES_NUMBER,
 
     Receiver = spawn(?MODULE, fun_receive, [ETS, Nodes, TotNumMsgToRecv, 0, Self]),
 
     lists:foreach(fun({_Name, Node}) ->
       DeliveryFun = fun({VV, _Msg}) ->
-        lager:info("DELIVERY ~p ~p", [VV, Node]),
         Receiver ! {delivery, Node, VV},
         ok
       end,
@@ -250,7 +245,6 @@ causal_delivery_test2(Config) ->
 
     lists:foreach(fun({_Name, Node}) ->
       [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
-      ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
     end, Nodes),
 
     fun_ready_to_check(Nodes, ETS),
@@ -263,16 +257,13 @@ causal_delivery_test2(Config) ->
 fun_send(_Node, 0) ->
   ok;
 fun_send(Node, Times) ->
-  ct:pal("FUN SEND"),
   timer:sleep(1000),
   {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
   fun_send(Node, Times - 1).
 
 fun_receive(ETS, Nodes, TotalMessages, TotalReceived, Runner) ->
-  ct:pal("FUN RECEIVE ~p ~p ~p ~p ~p", [ETS, Nodes, TotalMessages, TotalReceived, Runner]),
   receive
     {delivery, Node, VV} ->
-      ct:pal("RECEIVED from Node ~p", [Node]),
       [{_, DelMsgQ}] = ets:lookup(ETS, Node),
       ets:insert(ETS, {Node, DelMsgQ ++ [VV]}),
       %% For each node, update the number of delivered messages on every node
@@ -281,7 +272,6 @@ fun_receive(ETS, Nodes, TotalMessages, TotalReceived, Runner) ->
       %% check if all msgs were delivered on all the nodes
       case TotalMessages =:= TotalReceived1 of
         true ->
-          ct:pal("DONE SENT"),
           Runner ! done;
         false ->
           fun_receive(ETS, Nodes, TotalMessages, TotalReceived1, Runner)
@@ -348,8 +338,6 @@ causal_delivery_test3(Config) ->
     {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
     Active = sets:to_list(ActiveSet),
 
-    ct:pal("Node ~p has active ~p", [Node, Active]),
-
     %% Add vertexes and edges.
     [connect(Graph, Node, N) || {N, _, _} <- Active]
   end,
@@ -413,15 +401,12 @@ causal_delivery_test3(Config) ->
     orddict:new(),
   Nodes),
 
-  ct:pal("MAP ~p", [RandNumMsgToBeSentMap]),
-
   TotNumMsgToRecv = lists:sum([V || {_, V} <- RandNumMsgToBeSentMap]) * ?NODES_NUMBER,
 
   Receiver = spawn(?MODULE, fun_receive, [ETS, Nodes, TotNumMsgToRecv, 0, Self]),
 
   lists:foreach(fun({_Name, Node}) ->
     DeliveryFun = fun({VV, _Msg}) ->
-      lager:info("DELIVERY ~p ~p", [VV, Node]),
       Receiver ! {delivery, Node, VV},
       ok
     end,
@@ -439,7 +424,6 @@ causal_delivery_test3(Config) ->
 
   lists:foreach(fun({_Name, Node}) ->
     [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
-    ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
   end, Nodes),
 
   fun_ready_to_check(Nodes, ETS),
@@ -629,13 +613,13 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
     partisan_hyparview_peer_service_manager ->
 
       case {AmIServer, AmIClient} of
+        %% If I'm a server, I connect to both
+        %% clients and servers!
         {true, false} ->
           [];
-          %% If I'm a server, I connect to both
-          %% clients and servers!
+        %% I'm a client, pick servers.
         {false, true} ->
           omit(Clients, Nodes)
-          %% I'm a client, pick servers.
       end
   end,
   lists:map(fun(OtherNode) -> join(Myself, OtherNode) end, OtherNodes).
