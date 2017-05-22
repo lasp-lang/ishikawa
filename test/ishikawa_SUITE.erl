@@ -41,7 +41,7 @@
 -include("ishikawa.hrl").
 
 -define(CLIENT_NUMBER, 3).
--define(NODES_NUMBER, 5).
+-define(NODES_NUMBER, 17).
 -define(MAX_MSG_NUMBER, 5).
 -define(PEER_PORT, 9000).
 
@@ -70,7 +70,8 @@ end_per_testcase(Case, _Config) ->
 
 all() ->
     [causal_delivery_test1,
-    causal_delivery_test2].
+    causal_delivery_test2,
+    causal_delivery_test3].
 
 %% ===================================================================
 %% Tests.
@@ -82,15 +83,15 @@ causal_delivery_test1(Config) ->
     Manager = partisan_client_server_peer_service_manager,
 
     %% Specify servers.
-    Servers = [server],
+    % Servers = [server],
+    Servers = node_list(1, "server"),
 
     %% Specify clients.
-    Clients = client_list(?CLIENT_NUMBER),
-
+    % Clients = client_list(?CLIENT_NUMBER),
+    Clients = node_list(?CLIENT_NUMBER, "client"), 
     %% Start nodes.
     Nodes = start(client_server_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ?CLIENT_NUMBER},
                    {servers, Servers},
                    {clients, Clients}]),
 
@@ -175,10 +176,13 @@ causal_delivery_test2(Config) ->
     %% Use the default peer service manager.
     Manager = partisan_default_peer_service_manager,
 
+    %% Specify clients.
+    Clients = node_list(?NODES_NUMBER, "client"),
+
     %% Start nodes.
     Nodes = start(default_manager_test, Config,
                   [{partisan_peer_service_manager, Manager},
-                   {client_number, ?NODES_NUMBER}]),
+                   {clients, Clients}]),
 
     %% Pause for clustering.
     timer:sleep(1000),
@@ -314,6 +318,137 @@ fun_ready_to_check(Nodes, ETS) ->
       ct:fail("received incorrect message: ~p", [M])
   end.
 
+%% Test with hyparview overlay
+causal_delivery_test3(Config) ->
+
+  %% Use the hyparview peer service manager.
+  Manager = partisan_hyparview_peer_service_manager,
+
+  %% Specify servers.
+  Servers = node_list(1, "server"),
+
+  %% Specify clients.
+  Clients = node_list(?NODES_NUMBER, "client"),
+
+  %% Start nodes.
+  Nodes = start(hyparview_manager_test, Config,
+                [{partisan_peer_service_manager, Manager},
+                 {servers, Servers},
+                 {clients, Clients}]),
+
+  %% Pause for clustering.
+  timer:sleep(10000),
+
+  %% Create new digraph.
+  Graph = digraph:new(),
+
+  %% Verify connectedness.
+  %%
+  ConnectFun = fun({_, Node}) ->
+    {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+    Active = sets:to_list(ActiveSet),
+
+    ct:pal("Node ~p has active ~p", [Node, Active]),
+
+    %% Add vertexes and edges.
+    [connect(Graph, Node, N) || {N, _, _} <- Active]
+  end,
+
+  %% Build the graph.
+  lists:foreach(ConnectFun, Nodes),
+
+  %% Verify connectedness.
+  ConnectedFun = fun({_Name, Node}=Myself) ->
+    lists:foreach(fun({_, N}) ->
+      Path = digraph:get_short_path(Graph, Node, N),
+        case Path of
+          false ->
+            ct:fail("Graph is not connected!");
+          _ ->
+            ok
+        end
+      end, Nodes -- [Myself])
+    end,
+
+  lists:foreach(ConnectedFun, Nodes),
+
+  %% Verify symmetry.
+  SymmetryFun = fun({_, Node1}) ->
+    %% Get first nodes active set.
+    {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+    Active1 = sets:to_list(ActiveSet1),
+
+    lists:foreach(fun({Node2, _, _}) ->
+      %% Get second nodes active set.
+      {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+      Active2 = sets:to_list(ActiveSet2),
+
+      case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+        true ->
+          ok;
+        false ->
+          ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
+              [Node1, Node2, Node2, Node1])
+      end
+    end, Active1)
+  end,
+
+  lists:foreach(SymmetryFun, Nodes),
+
+  ETS = ets:new(delMsgQ, [ordered_set, public]),
+
+  %% Add for each node an empty set to record delivered messages
+  lists:foreach(fun({_Name, Node}) ->
+    ets:insert(ETS, {Node, []})
+  end,
+  Nodes),
+
+  Self = self(),
+
+  %% create map from name to number of messages
+  RandNumMsgToBeSentMap = lists:foldl(
+    fun({_Name, Node}, Acc) ->
+      orddict:store(Node, rand:uniform(?MAX_MSG_NUMBER), Acc)
+    end,
+    orddict:new(),
+  Nodes),
+
+  ct:pal("MAP ~p", [RandNumMsgToBeSentMap]),
+
+  TotNumMsgToRecv = lists:sum([V || {_, V} <- RandNumMsgToBeSentMap]) * ?NODES_NUMBER,
+
+  Receiver = spawn(?MODULE, fun_receive, [ETS, Nodes, TotNumMsgToRecv, 0, Self]),
+
+  lists:foreach(fun({_Name, Node}) ->
+    DeliveryFun = fun({VV, _Msg}) ->
+      lager:info("DELIVERY ~p ~p", [VV, Node]),
+      Receiver ! {delivery, Node, VV},
+      ok
+    end,
+    ok = rpc:call(Node,
+                  ishikawa,
+                  tcbdelivery,
+                  [DeliveryFun])
+  end,
+  Nodes),
+
+  %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
+  lists:foreach(fun({_Name, Node}) ->
+    spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
+  end, Nodes),
+
+  lists:foreach(fun({_Name, Node}) ->
+    [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
+    ct:pal("ETS Node ~p Queue ~p", [Node, DelMsgQxx])
+  end, Nodes),
+
+  fun_ready_to_check(Nodes, ETS),
+
+  %% Stop nodes.
+  stop(Nodes),
+
+  ok.
+
 %% ===================================================================
 %% Internal functions.
 %% ===================================================================
@@ -342,13 +477,10 @@ start(_Case, _Config, Options) ->
     %% Load lager.
     {ok, _} = application:ensure_all_started(lager),
 
-    ClientNumber = proplists:get_value(client_number, Options, 3),
-    NodeNames = case proplists:get_value(partisan_peer_service_manager, Options) of
-      partisan_client_server_peer_service_manager ->
-        node_list(ClientNumber);
-      partisan_default_peer_service_manager ->
-        client_list(ClientNumber)
-    end,
+    Servers = proplists:get_value(servers, Options, []),
+    Clients = proplists:get_value(clients, Options, []),
+
+    NodeNames = lists:flatten(Servers ++ Clients),
     
     %% Start all nodes.
     InitializerFun = fun(Name) ->
@@ -401,7 +533,7 @@ start(_Case, _Config, Options) ->
     ConfigureFun = fun({Name, Node}) ->
       %% Configure the peer service.
       PeerService = proplists:get_value(partisan_peer_service_manager, Options),
-      ct:pal("Setting peer service maanger on node ~p to ~p", [Node, PeerService]),
+      ct:pal("Setting peer service manager on node ~p to ~p", [Node, PeerService]),
       ok = rpc:call(Node, partisan_config, set,
         [partisan_peer_service_manager, PeerService]),
 
@@ -439,8 +571,7 @@ start(_Case, _Config, Options) ->
     lists:map(StartFun, Nodes),
 
     ct:pal("Clustering nodes."),
-    Manager = proplists:get_value(partisan_peer_service_manager, Options),
-    lists:map(fun(Node) -> cluster(Node, Nodes, Manager) end, Nodes),
+    lists:map(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
 
     ct:pal("Partisan fully initialized."),
 
@@ -451,34 +582,63 @@ codepath() ->
     lists:filter(fun filelib:is_dir/1, code:get_path()).
 
 %% @private
+omit(OmitNameList, Nodes0) ->
+  FoldFun = fun({Name, _Node} = N, Nodes) ->
+    case lists:member(Name, OmitNameList) of
+      true ->
+        Nodes;
+      false ->
+        Nodes ++ [N]
+    end
+  end,
+  lists:foldl(FoldFun, [], Nodes0).
+
+%% @private
 %%
 %% We have to cluster each node with all other nodes to compute the
 %% correct overlay: for instance, sometimes you'll want to establish a
 %% client/server topology, which requires all nodes talk to every other
 %% node to correctly compute the overlay.
 %%
-cluster(Node, Nodes, Manager) when is_list(Nodes) ->
+cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
+  
+  Manager = proplists:get_value(partisan_peer_service_manager, Options),
+
+  Servers = proplists:get_value(servers, Options, []),
+  Clients = proplists:get_value(clients, Options, []),
+
+  AmIServer = lists:member(Name, Servers),
+  AmIClient = lists:member(Name, Clients),
+
   OtherNodes = case Manager of
     partisan_default_peer_service_manager ->
-      Nodes -- [Node];
+      %% Omit just ourselves.
+      omit([Name], Nodes);
     partisan_client_server_peer_service_manager ->
-      case Node of
-        {server, _} ->
-          Nodes -- [Node];
-        _ ->
-          Server = lists:keyfind(server, 1, Nodes),
-          [Server]
+      case {AmIServer, AmIClient} of
+        {true, false} ->
+          %% If I'm a server, I connect to both
+          %% clients and servers!
+          omit([Name], Nodes);
+        {false, true} ->
+          %% I'm a client, pick servers.
+          omit(Clients, Nodes);
+        {_, _} ->
+          omit([Name], Nodes)
       end;
     partisan_hyparview_peer_service_manager ->
-      case Node of
-        {server, _} ->
+
+      case {AmIServer, AmIClient} of
+        {true, false} ->
           [];
-        _ ->
-          Server = lists:keyfind(server, 1, Nodes),
-          [Server]
+          %% If I'm a server, I connect to both
+          %% clients and servers!
+        {false, true} ->
+          omit(Clients, Nodes)
+          %% I'm a client, pick servers.
       end
   end,
-  lists:map(fun(OtherNode) -> join(Node, OtherNode) end, OtherNodes).
+  lists:map(fun(OtherNode) -> join(Myself, OtherNode) end, OtherNodes).
 
 join({_, Node}, {_, OtherNode}) ->
   PeerPort = rpc:call(OtherNode,
@@ -505,11 +665,22 @@ stop(Nodes) ->
   ok.
 
 %% @private
-node_list(ClientNumber) ->
-  Clients = client_list(ClientNumber),
-  [server | Clients].
+node_list(0, _Name) -> [];
+node_list(N, Name) ->
+  [list_to_atom(string:join([Name, integer_to_list(X)], "_")) || X <- lists:seq(1, N) ].
 
 %% @private
-client_list(0) -> [];
-client_list(N) -> lists:append(client_list(N - 1),
-  [list_to_atom("client_" ++ integer_to_list(N))]).
+connect(G, N1, N2) ->
+  %% Add vertex for neighboring node.
+  digraph:add_vertex(G, N1),
+  % ct:pal("Adding vertex: ~p", [N1]),
+
+  %% Add vertex for neighboring node.
+  digraph:add_vertex(G, N2),
+  % ct:pal("Adding vertex: ~p", [N2]),
+
+  %% Add edge to that node.
+  digraph:add_edge(G, N1, N2),
+  % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
+
+  ok.
