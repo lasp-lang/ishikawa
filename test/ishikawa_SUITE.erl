@@ -243,10 +243,6 @@ causal_delivery_test2(Config) ->
       spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
     end, Nodes),
 
-    lists:foreach(fun({_Name, Node}) ->
-      [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
-    end, Nodes),
-
     fun_ready_to_check(Nodes, ETS),
 
     %% Stop nodes.
@@ -420,10 +416,6 @@ causal_delivery_test3(Config) ->
   %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
   lists:foreach(fun({_Name, Node}) ->
     spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
-  end, Nodes),
-
-  lists:foreach(fun({_Name, Node}) ->
-    [{_, DelMsgQxx}] = ets:lookup(ETS, Node),
   end, Nodes),
 
   fun_ready_to_check(Nodes, ETS),
