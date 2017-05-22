@@ -31,3 +31,4 @@ fprof.trace
 .eqc/
 dcos/
 *.swp
+*.DS_Store
