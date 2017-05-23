@@ -40,13 +40,9 @@
 
 -include("ishikawa.hrl").
 
--define(CLIENT_NUMBER, 3).
 -define(NODES_NUMBER, 7).
 -define(MAX_MSG_NUMBER, 5).
 -define(PEER_PORT, 9000).
-
-% suite() ->
-%     [{timetrap, {minutes, 2}}].
 
 %% ===================================================================
 %% common_test callbacks
@@ -69,16 +65,18 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 all() ->
-    [causal_test_client_server,
-    causal_test_default,
-    causal_test_hyparview].
+    [
+     client_server_causal_test,
+     default_causal_test,
+     hyparview_causal_test
+    ].
 
 %% ===================================================================
 %% Tests.
 %% ===================================================================
 
 %% Not very interesting to test causal delivery and stability with a Client/Server star topology 
-causal_test_client_server(Config) ->
+client_server_causal_test(Config) ->
   %% Use the client/server peer service manager.
   Manager = partisan_client_server_peer_service_manager,
 
@@ -86,7 +84,7 @@ causal_test_client_server(Config) ->
   Servers = node_list(1, "server"),
 
   %% Specify clients.
-  Clients = node_list(?CLIENT_NUMBER, "client"), 
+  Clients = node_list(?NODES_NUMBER, "client"),
   %% Start nodes.
   Nodes = start(client_server_manager_test, Config,
                 [{partisan_peer_service_manager, Manager},
@@ -169,7 +167,7 @@ causal_test_client_server(Config) ->
   ok.
 
 %% Test causal delivery and stability with full membership
-causal_test_default(Config) ->
+default_causal_test(Config) ->
 
   %% Use the default peer service manager.
   Manager = partisan_default_peer_service_manager,
@@ -213,7 +211,7 @@ causal_test_default(Config) ->
   ok.
 
 %% Test causal delivery and stability with hyparview overlay
-causal_test_hyparview(Config) ->
+hyparview_causal_test(Config) ->
 
   %% Use the hyparview peer service manager.
   Manager = partisan_hyparview_peer_service_manager,
@@ -468,15 +466,12 @@ cluster({Name, _Node} = Myself, Nodes, Options) when is_list(Nodes) ->
           omit([Name], Nodes);
         {false, true} ->
           %% I'm a client, pick servers.
-          omit(Clients, Nodes);
-        {_, _} ->
-          omit([Name], Nodes)
+          omit(Clients, Nodes)
       end;
     partisan_hyparview_peer_service_manager ->
 
       case {AmIServer, AmIClient} of
-        %% If I'm a server, I connect to both
-        %% clients and servers!
+        %% If I'm a server, don't connect to any.
         {true, false} ->
           [];
         %% I'm a client, pick servers.
@@ -519,15 +514,12 @@ node_list(N, Name) ->
 connect(G, N1, N2) ->
   %% Add vertex for neighboring node.
   digraph:add_vertex(G, N1),
-  % ct:pal("Adding vertex: ~p", [N1]),
 
   %% Add vertex for neighboring node.
   digraph:add_vertex(G, N2),
-  % ct:pal("Adding vertex: ~p", [N2]),
 
   %% Add edge to that node.
   digraph:add_edge(G, N1, N2),
-  % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
 
   ok.
 
