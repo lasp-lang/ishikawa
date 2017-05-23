@@ -574,20 +574,48 @@ fun_receive(NodeMsgInfoMap, Nodes, TotalMessages, TotalReceived, Runner) ->
 fun_check_delivery(Nodes, NodeMsgInfoMap) ->
   
   ct:pal("fun_check_delivery"),
+
+  %% check that all delivered VVs are the same
+  {_, Node} = lists:nth(1, Nodes),
+  {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+  lists:foldl(
+    fun(I, AccI) ->
+      {_, Node1} = lists:nth(I, Nodes),
+      {_, DelMsgQ1} = orddict:fetch(Node1, NodeMsgInfoMap),
+      AccI andalso lists:usort(DelMsgQ) =:= lists:usort(DelMsgQ1)
+    end,
+    true,
+  lists:seq(2, length(Nodes))),
+  
   lists:foreach(
-    fun({_Name, Node}) ->
-      {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+    fun({_Name2, Node2}) ->
+      {_, DelMsgQ2} = orddict:fetch(Node2, NodeMsgInfoMap),
       lists:foldl(
         fun(I, AccI) ->
           lists:foldl(
             fun(J, AccJ) ->
-              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ), lists:nth(J, DelMsgQ))
+              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2))
             end,
             AccI,
-          lists:seq(I+1, length(DelMsgQ))) 
+          lists:seq(I+1, length(DelMsgQ2))) 
         end,
         true,
-      lists:seq(1, length(DelMsgQ)-1))
+      lists:seq(1, length(DelMsgQ2)-1))
+    end,
+  Nodes).
+
+%% @private
+fun_check_causal_stability(Nodes, NodeMsgInfoMap) ->
+  
+  ct:pal("fun_check_stability"),
+
+  %% we now (from fun_check_delivery) that all delivered VVs are the same for each node
+  %% we still need to check that, for each node, all delivered VVs are stable
+  lists:filter(
+    fun({_Name, Node}) ->
+      {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+      StableMsgQ = rpc:call(Node, ishikawa, tcbstable, [DelMsgQ]),
+      lists:usort(DelMsgQ) =:= lists:usort(StableMsgQ)
     end,
   Nodes).
 
@@ -595,9 +623,15 @@ fun_check_delivery(Nodes, NodeMsgInfoMap) ->
 fun_ready_to_check(Nodes) ->
   receive
     {done, NodeMsgInfoMap} ->
-      fun_check_delivery(Nodes, NodeMsgInfoMap);
+      %% check causal delivery
+      %% check if all delivered VVs respect causal order
+      fun_check_delivery(Nodes, NodeMsgInfoMap),
+      
+      %% check causal stability
+      %% check if all delivered VVs are stable after delivery
+      fun_check_causal_stability(Nodes,NodeMsgInfoMap);
     M ->
-      ct:fail("received incorrect message: ~p", [M])
+      ct:fail("fun_ready_to_check :: received incorrect message: ~p", [M])
   end.
 
 fun_causal_test(Nodes) ->
@@ -632,5 +666,5 @@ fun_causal_test(Nodes) ->
   end, Nodes),
 
   %% check if all messages where delivered
-  %% if ready check causal delivery order, if not loop again
+  %% if ready check causal delivery order and causal stability, if not loop again
   fun_ready_to_check(Nodes).
