@@ -204,27 +204,19 @@ causal_delivery_test_default(Config) ->
     %% Verify the membership is correct.
     lists:foreach(VerifyFun, Nodes),
 
-    ETS = ets:new(delMsgQ, [ordered_set, public]),
-
-    %% Add for each node an empty set to record delivered messages
-    lists:foreach(fun({_Name, Node}) ->
-      ets:insert(ETS, {Node, []})
-    end,
-    Nodes),
-
     Self = self(),
 
     %% create map from name to number of messages
-    RandNumMsgToBeSentMap = lists:foldl(
+    NodeMsgInfoMap = lists:foldl(
       fun({_Name, Node}, Acc) ->
-        orddict:store(Node, rand:uniform(?MAX_MSG_NUMBER), Acc)
+        orddict:store(Node, {rand:uniform(?MAX_MSG_NUMBER), []}, Acc)
       end,
       orddict:new(),
     Nodes),
 
-    TotNumMsgToRecv = lists:sum([V || {_, V} <- RandNumMsgToBeSentMap]) * ?NODES_NUMBER,
+    TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
 
-    Receiver = spawn(?MODULE, fun_receive, [ETS, Nodes, TotNumMsgToRecv, 0, Self]),
+    Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
 
     lists:foreach(fun({_Name, Node}) ->
       DeliveryFun = fun({VV, _Msg}) ->
@@ -240,10 +232,11 @@ causal_delivery_test_default(Config) ->
 
     %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
     lists:foreach(fun({_Name, Node}) ->
-      spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
+      {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
+      spawn(?MODULE, fun_send, [Node, MsgNumToSend])
     end, Nodes),
 
-    fun_ready_to_check(Nodes, ETS),
+    fun_ready_to_check(Nodes),
 
     %% Stop nodes.
     stop(Nodes),
@@ -257,49 +250,49 @@ fun_send(Node, Times) ->
   {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
   fun_send(Node, Times - 1).
 
-fun_receive(ETS, Nodes, TotalMessages, TotalReceived, Runner) ->
+fun_receive(NodeMsgInfoMap, Nodes, TotalMessages, TotalReceived, Runner) ->
   receive
     {delivery, Node, VV} ->
-      [{_, DelMsgQ}] = ets:lookup(ETS, Node),
-      ets:insert(ETS, {Node, DelMsgQ ++ [VV]}),
+      {MsgNumToSend, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+      NodeMsgInfoMap1 = orddict:store(Node, {MsgNumToSend, DelMsgQ ++ [VV]}, NodeMsgInfoMap),
       %% For each node, update the number of delivered messages on every node
       TotalReceived1 = TotalReceived + 1,
       ct:pal("~p of ~p", [TotalReceived1, TotalMessages]),
       %% check if all msgs were delivered on all the nodes
       case TotalMessages =:= TotalReceived1 of
         true ->
-          Runner ! done;
+          Runner ! {done, NodeMsgInfoMap1};
         false ->
-          fun_receive(ETS, Nodes, TotalMessages, TotalReceived1, Runner)
+          fun_receive(NodeMsgInfoMap1, Nodes, TotalMessages, TotalReceived1, Runner)
       end;
     M ->
       ct:fail("UNKWONN ~p", [M])
     end.
 
-fun_check_delivery(Nodes, ETS) ->
+fun_check_delivery(Nodes, NodeMsgInfoMap) ->
   
   ct:pal("fun_check_delivery"),
   lists:foreach(
     fun({_Name, Node}) ->
-      [{_, DelMsgQ2}] = ets:lookup(ETS, Node),
+      {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
       lists:foldl(
         fun(I, AccI) ->
           lists:foldl(
             fun(J, AccJ) ->
-              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ2), lists:nth(J, DelMsgQ2))
+              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ), lists:nth(J, DelMsgQ))
             end,
             AccI,
-          lists:seq(I+1, length(DelMsgQ2))) 
+          lists:seq(I+1, length(DelMsgQ))) 
         end,
         true,
-      lists:seq(1, length(DelMsgQ2)-1))
+      lists:seq(1, length(DelMsgQ)-1))
     end,
   Nodes).
 
-fun_ready_to_check(Nodes, ETS) ->
+fun_ready_to_check(Nodes) ->
   receive
-    done ->
-      fun_check_delivery(Nodes, ETS);
+    {done, NodeMsgInfoMap} ->
+      fun_check_delivery(Nodes, NodeMsgInfoMap);
     M ->
       ct:fail("received incorrect message: ~p", [M])
   end.
@@ -379,27 +372,19 @@ causal_delivery_test_hyparview(Config) ->
 
   lists:foreach(SymmetryFun, Nodes),
 
-  ETS = ets:new(delMsgQ, [ordered_set, public]),
-
-  %% Add for each node an empty set to record delivered messages
-  lists:foreach(fun({_Name, Node}) ->
-    ets:insert(ETS, {Node, []})
-  end,
-  Nodes),
-
-  Self = self(),
-
   %% create map from name to number of messages
-  RandNumMsgToBeSentMap = lists:foldl(
+  NodeMsgInfoMap = lists:foldl(
     fun({_Name, Node}, Acc) ->
-      orddict:store(Node, rand:uniform(?MAX_MSG_NUMBER), Acc)
+      orddict:store(Node, {rand:uniform(?MAX_MSG_NUMBER), []}, Acc)
     end,
     orddict:new(),
   Nodes),
 
-  TotNumMsgToRecv = lists:sum([V || {_, V} <- RandNumMsgToBeSentMap]) * ?NODES_NUMBER,
+  TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
 
-  Receiver = spawn(?MODULE, fun_receive, [ETS, Nodes, TotNumMsgToRecv, 0, Self]),
+  Self = self(),
+
+  Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
 
   lists:foreach(fun({_Name, Node}) ->
     DeliveryFun = fun({VV, _Msg}) ->
@@ -415,10 +400,11 @@ causal_delivery_test_hyparview(Config) ->
 
   %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
   lists:foreach(fun({_Name, Node}) ->
-    spawn(?MODULE, fun_send, [Node, orddict:fetch(Node, RandNumMsgToBeSentMap)])
+    {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
+    spawn(?MODULE, fun_send, [Node, MsgNumToSend])
   end, Nodes),
 
-  fun_ready_to_check(Nodes, ETS),
+  fun_ready_to_check(Nodes),
 
   %% Stop nodes.
   stop(Nodes),
