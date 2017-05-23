@@ -79,223 +79,138 @@ all() ->
 
 %% Not very interesting to test causal delivery with a Client/Server star topology 
 causal_delivery_test_client_server(Config) ->
-    %% Use the client/server peer service manager.
-    Manager = partisan_client_server_peer_service_manager,
+  %% Use the client/server peer service manager.
+  Manager = partisan_client_server_peer_service_manager,
 
-    %% Specify servers.
-    Servers = node_list(1, "server"),
+  %% Specify servers.
+  Servers = node_list(1, "server"),
 
-    %% Specify clients.
-    Clients = node_list(?CLIENT_NUMBER, "client"), 
-    %% Start nodes.
-    Nodes = start(client_server_manager_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {servers, Servers},
-                   {clients, Clients}]),
+  %% Specify clients.
+  Clients = node_list(?CLIENT_NUMBER, "client"), 
+  %% Start nodes.
+  Nodes = start(client_server_manager_test, Config,
+                [{partisan_peer_service_manager, Manager},
+                 {servers, Servers},
+                 {clients, Clients}]),
 
-    %% Pause for clustering.
-    timer:sleep(1000),
+  %% Pause for clustering.
+  timer:sleep(1000),
 
-    %% Verify membership.
-    %%
-    VerifyFun = fun({Name, Node}) ->
-      {ok, Members} = rpc:call(Node, Manager, members, []),
-
-        %% If this node is a server, it should know about all nodes.
-        SortedNodes = case lists:member(Name, Servers) of
-          true ->
-            lists:usort([N || {_, N} <- Nodes]);
-          false ->
-            %% Otherwise, it should only know about the server
-            %% and itself.
-            lists:usort(
-              lists:map(
-                fun(Server) ->
-                  proplists:get_value(Server, Nodes)
-                end,
-                Servers
-              ) ++ [Node]
-            )
-        end,
-
-        SortedMembers = lists:usort(Members),
-        case SortedMembers =:= SortedNodes of
-          true ->
-            ok;
-          false ->
-            ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
-        end
-    end,
-
-    %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
-
-    %% Get the first node in the list.
-    [{_ServerName, ServerNode} | ClientNodes] = Nodes,
-
-    %% Configure the delivery function on each node to send the messages
-    %% back to the test runner in delivery order.
-    Self = self(),
-
-    lists:foreach(fun({_ClientName, ClientNode}) ->
-      DeliveryFun = fun({_VV, Msg}) ->
-        Self ! {delivery, ClientNode, Msg},
-        ok
-      end,
-      ok = rpc:call(ClientNode, ishikawa, tcbdelivery, [DeliveryFun])
-    end,
-    ClientNodes),
-
-    %% Send a series of messages.
-    {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
-    
-    
-    %% Ensure each node receives a message.
-    lists:foreach(fun({_ClientName, ClientNode}) ->
-      receive
-        {delivery, ClientNode, 1} ->
-          ok;
-        {delivery, ClientNode, Message} ->
-          ct:fail("Client ~p received incorrect message: ~p", [ClientNode, Message])
-      after
-        1000 ->
-          ct:fail("Client ~p didn't receive message!", [ClientNode])
-      end
-    end, ClientNodes),
-
-    %% Stop nodes.
-    stop(Nodes),
-
-    ok.
-
-%% Test with full membership
-causal_delivery_test_default(Config) ->
-
-    %% Use the default peer service manager.
-    Manager = partisan_default_peer_service_manager,
-
-    %% Specify clients.
-    Clients = node_list(?NODES_NUMBER, "client"),
-
-    %% Start nodes.
-    Nodes = start(default_manager_test, Config,
-                  [{partisan_peer_service_manager, Manager},
-                   {clients, Clients}]),
-
-    %% Pause for clustering.
-    timer:sleep(1000),
-
-    %% Verify membership.
-    %%
-    VerifyFun = fun({_Name, Node}) ->
-      {ok, Members} = rpc:call(Node, Manager, members, []),
+  %% Verify membership.
+  %%
+  VerifyFun = fun({Name, Node}) ->
+    {ok, Members} = rpc:call(Node, Manager, members, []),
 
       %% If this node is a server, it should know about all nodes.
-      SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
-      SortedMembers = lists:usort(Members) -- [Node],
+      SortedNodes = case lists:member(Name, Servers) of
+        true ->
+          lists:usort([N || {_, N} <- Nodes]);
+        false ->
+          %% Otherwise, it should only know about the server
+          %% and itself.
+          lists:usort(
+            lists:map(
+              fun(Server) ->
+                proplists:get_value(Server, Nodes)
+              end,
+              Servers
+            ) ++ [Node]
+          )
+      end,
+
+      SortedMembers = lists:usort(Members),
       case SortedMembers =:= SortedNodes of
         true ->
           ok;
         false ->
-          ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+          ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
       end
+  end,
+
+  %% Verify the membership is correct.
+  lists:foreach(VerifyFun, Nodes),
+
+  %% Get the first node in the list.
+  [{_ServerName, ServerNode} | ClientNodes] = Nodes,
+
+  %% Configure the delivery function on each node to send the messages
+  %% back to the test runner in delivery order.
+  Self = self(),
+
+  lists:foreach(fun({_ClientName, ClientNode}) ->
+    DeliveryFun = fun({_VV, Msg}) ->
+      Self ! {delivery, ClientNode, Msg},
+      ok
     end,
+    ok = rpc:call(ClientNode, ishikawa, tcbdelivery, [DeliveryFun])
+  end,
+  ClientNodes),
 
-    %% Verify the membership is correct.
-    lists:foreach(VerifyFun, Nodes),
-
-    Self = self(),
-
-    %% create map from name to number of messages
-    NodeMsgInfoMap = lists:foldl(
-      fun({_Name, Node}, Acc) ->
-        orddict:store(Node, {rand:uniform(?MAX_MSG_NUMBER), []}, Acc)
-      end,
-      orddict:new(),
-    Nodes),
-
-    TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
-
-    Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
-
-    lists:foreach(fun({_Name, Node}) ->
-      DeliveryFun = fun({VV, _Msg}) ->
-        Receiver ! {delivery, Node, VV},
-        ok
-      end,
-      ok = rpc:call(Node,
-                    ishikawa,
-                    tcbdelivery,
-                    [DeliveryFun])
-    end,
-    Nodes),
-
-    %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
-    lists:foreach(fun({_Name, Node}) ->
-      {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
-      spawn(?MODULE, fun_send, [Node, MsgNumToSend])
-    end, Nodes),
-
-    fun_ready_to_check(Nodes),
-
-    %% Stop nodes.
-    stop(Nodes),
-
-    ok.
-
-fun_send(_Node, 0) ->
-  ok;
-fun_send(Node, Times) ->
-  timer:sleep(1000),
-  {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
-  fun_send(Node, Times - 1).
-
-fun_receive(NodeMsgInfoMap, Nodes, TotalMessages, TotalReceived, Runner) ->
-  receive
-    {delivery, Node, VV} ->
-      {MsgNumToSend, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
-      NodeMsgInfoMap1 = orddict:store(Node, {MsgNumToSend, DelMsgQ ++ [VV]}, NodeMsgInfoMap),
-      %% For each node, update the number of delivered messages on every node
-      TotalReceived1 = TotalReceived + 1,
-      ct:pal("~p of ~p", [TotalReceived1, TotalMessages]),
-      %% check if all msgs were delivered on all the nodes
-      case TotalMessages =:= TotalReceived1 of
-        true ->
-          Runner ! {done, NodeMsgInfoMap1};
-        false ->
-          fun_receive(NodeMsgInfoMap1, Nodes, TotalMessages, TotalReceived1, Runner)
-      end;
-    M ->
-      ct:fail("UNKWONN ~p", [M])
-    end.
-
-fun_check_delivery(Nodes, NodeMsgInfoMap) ->
+  %% Send a series of messages.
+  {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
   
-  ct:pal("fun_check_delivery"),
-  lists:foreach(
-    fun({_Name, Node}) ->
-      {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
-      lists:foldl(
-        fun(I, AccI) ->
-          lists:foldl(
-            fun(J, AccJ) ->
-              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ), lists:nth(J, DelMsgQ))
-            end,
-            AccI,
-          lists:seq(I+1, length(DelMsgQ))) 
-        end,
-        true,
-      lists:seq(1, length(DelMsgQ)-1))
-    end,
-  Nodes).
+  
+  %% Ensure each node receives a message.
+  lists:foreach(fun({_ClientName, ClientNode}) ->
+    receive
+      {delivery, ClientNode, 1} ->
+        ok;
+      {delivery, ClientNode, Message} ->
+        ct:fail("Client ~p received incorrect message: ~p", [ClientNode, Message])
+    after
+      1000 ->
+        ct:fail("Client ~p didn't receive message!", [ClientNode])
+    end
+  end, ClientNodes),
 
-fun_ready_to_check(Nodes) ->
-  receive
-    {done, NodeMsgInfoMap} ->
-      fun_check_delivery(Nodes, NodeMsgInfoMap);
-    M ->
-      ct:fail("received incorrect message: ~p", [M])
-  end.
+  %% Stop nodes.
+  stop(Nodes),
+
+  ok.
+
+%% Test with full membership
+causal_delivery_test_default(Config) ->
+
+  %% Use the default peer service manager.
+  Manager = partisan_default_peer_service_manager,
+
+  %% Specify clients.
+  Clients = node_list(?NODES_NUMBER, "client"),
+
+  %% Start nodes.
+  Nodes = start(default_manager_test, Config,
+                [{partisan_peer_service_manager, Manager},
+                 {clients, Clients}]),
+
+  %% Pause for clustering.
+  timer:sleep(1000),
+
+  %% Verify membership.
+  %%
+  VerifyFun = fun({_Name, Node}) ->
+    {ok, Members} = rpc:call(Node, Manager, members, []),
+
+    %% If this node is a server, it should know about all nodes.
+    SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
+    SortedMembers = lists:usort(Members) -- [Node],
+    case SortedMembers =:= SortedNodes of
+      true ->
+        ok;
+      false ->
+        ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+    end
+  end,
+
+  %% Verify the membership is correct.
+  lists:foreach(VerifyFun, Nodes),
+
+  %% start causal delivery test
+  fun_causal_test(Nodes),
+
+  %% Stop nodes.
+  stop(Nodes),
+
+  ok.
 
 %% Test with hyparview overlay
 causal_delivery_test_hyparview(Config) ->
@@ -372,39 +287,8 @@ causal_delivery_test_hyparview(Config) ->
 
   lists:foreach(SymmetryFun, Nodes),
 
-  %% create map from name to number of messages
-  NodeMsgInfoMap = lists:foldl(
-    fun({_Name, Node}, Acc) ->
-      orddict:store(Node, {rand:uniform(?MAX_MSG_NUMBER), []}, Acc)
-    end,
-    orddict:new(),
-  Nodes),
-
-  TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
-
-  Self = self(),
-
-  Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
-
-  lists:foreach(fun({_Name, Node}) ->
-    DeliveryFun = fun({VV, _Msg}) ->
-      Receiver ! {delivery, Node, VV},
-      ok
-    end,
-    ok = rpc:call(Node,
-                  ishikawa,
-                  tcbdelivery,
-                  [DeliveryFun])
-  end,
-  Nodes),
-
-  %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
-  lists:foreach(fun({_Name, Node}) ->
-    {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
-    spawn(?MODULE, fun_send, [Node, MsgNumToSend])
-  end, Nodes),
-
-  fun_ready_to_check(Nodes),
+  %% start causal delivery test
+  fun_causal_test(Nodes),
 
   %% Stop nodes.
   stop(Nodes),
@@ -646,3 +530,107 @@ connect(G, N1, N2) ->
   % ct:pal("Adding edge from ~p to ~p", [N1, N2]),
 
   ok.
+
+%% private
+%% Initialize Map containing, per each node, with a generated number of random messages to be sent
+%% and an emoty list that will store delivered Messages (VV only) in delivery order
+fun_intialize_Msg_Info_Map(Nodes) ->
+  lists:foldl(
+  fun({_Name, Node}, Acc) ->
+    orddict:store(Node, {rand:uniform(?MAX_MSG_NUMBER), []}, Acc)
+  end,
+  orddict:new(),
+  Nodes).
+
+%% @private
+fun_send(_Node, 0) ->
+  ok;
+fun_send(Node, Times) ->
+  timer:sleep(1000),
+  {ok, _} = rpc:call(Node, ishikawa, tcbcast, [msg]),
+  fun_send(Node, Times - 1).
+
+%% @private
+fun_receive(NodeMsgInfoMap, Nodes, TotalMessages, TotalReceived, Runner) ->
+  receive
+    {delivery, Node, VV} ->
+      {MsgNumToSend, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+      NodeMsgInfoMap1 = orddict:store(Node, {MsgNumToSend, DelMsgQ ++ [VV]}, NodeMsgInfoMap),
+      %% For each node, update the number of delivered messages on every node
+      TotalReceived1 = TotalReceived + 1,
+      ct:pal("~p of ~p", [TotalReceived1, TotalMessages]),
+      %% check if all msgs were delivered on all the nodes
+      case TotalMessages =:= TotalReceived1 of
+        true ->
+          Runner ! {done, NodeMsgInfoMap1};
+        false ->
+          fun_receive(NodeMsgInfoMap1, Nodes, TotalMessages, TotalReceived1, Runner)
+      end;
+    M ->
+      ct:fail("UNKWONN ~p", [M])
+    end.
+
+%% @private
+fun_check_delivery(Nodes, NodeMsgInfoMap) ->
+  
+  ct:pal("fun_check_delivery"),
+  lists:foreach(
+    fun({_Name, Node}) ->
+      {_, DelMsgQ} = orddict:fetch(Node, NodeMsgInfoMap),
+      lists:foldl(
+        fun(I, AccI) ->
+          lists:foldl(
+            fun(J, AccJ) ->
+              AccJ andalso not vclock:descends(lists:nth(I, DelMsgQ), lists:nth(J, DelMsgQ))
+            end,
+            AccI,
+          lists:seq(I+1, length(DelMsgQ))) 
+        end,
+        true,
+      lists:seq(1, length(DelMsgQ)-1))
+    end,
+  Nodes).
+
+%% @private
+fun_ready_to_check(Nodes) ->
+  receive
+    {done, NodeMsgInfoMap} ->
+      fun_check_delivery(Nodes, NodeMsgInfoMap);
+    M ->
+      ct:fail("received incorrect message: ~p", [M])
+  end.
+
+fun_causal_test(Nodes) ->
+  NodeMsgInfoMap = fun_intialize_Msg_Info_Map(Nodes),
+
+  %% Calculate the number of Messages that will be delivered by each node
+  %% result = sum of msgs sent per node * number of nodes (Broadcast)
+  TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
+
+  Self = self(),
+
+  %% Spawn a receiver process to collect all delivered msgs VVs per node
+  Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
+
+  %% define a delivery function that notifies the Receiver upon delivery
+  lists:foreach(fun({_Name, Node}) ->
+    DeliveryFun = fun({VV, _Msg}) ->
+      Receiver ! {delivery, Node, VV},
+      ok
+    end,
+    ok = rpc:call(Node,
+                  ishikawa,
+                  tcbdelivery,
+                  [DeliveryFun])
+  end,
+  Nodes),
+
+  %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
+  lists:foreach(fun({_Name, Node}) ->
+    {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
+    spawn(?MODULE, fun_send, [Node, MsgNumToSend])
+  end, Nodes),
+
+  %% check if all messages where delivered
+  %% if ready check causal delivery order, if not loop again
+  fun_ready_to_check(Nodes).
