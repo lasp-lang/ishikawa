@@ -91,75 +91,8 @@ client_server_causal_test(Config) ->
                  {servers, Servers},
                  {clients, Clients}]),
 
-  %% Pause for clustering.
-  timer:sleep(1000),
-
-  %% Verify membership.
-  %%
-  VerifyFun = fun({Name, Node}) ->
-    {ok, Members} = rpc:call(Node, Manager, members, []),
-
-      %% If this node is a server, it should know about all nodes.
-      SortedNodes = case lists:member(Name, Servers) of
-        true ->
-          lists:usort([N || {_, N} <- Nodes]);
-        false ->
-          %% Otherwise, it should only know about the server
-          %% and itself.
-          lists:usort(
-            lists:map(
-              fun(Server) ->
-                proplists:get_value(Server, Nodes)
-              end,
-              Servers
-            ) ++ [Node]
-          )
-      end,
-
-      SortedMembers = lists:usort(Members),
-      case SortedMembers =:= SortedNodes of
-        true ->
-          ok;
-        false ->
-          ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
-      end
-  end,
-
-  %% Verify the membership is correct.
-  lists:foreach(VerifyFun, Nodes),
-
-  %% Get the first node in the list.
-  [{_ServerName, ServerNode} | ClientNodes] = Nodes,
-
-  %% Configure the delivery function on each node to send the messages
-  %% back to the test runner in delivery order.
-  Self = self(),
-
-  lists:foreach(fun({_ClientName, ClientNode}) ->
-    DeliveryFun = fun({_VV, Msg}) ->
-      Self ! {delivery, ClientNode, Msg},
-      ok
-    end,
-    ok = rpc:call(ClientNode, ishikawa, tcbdelivery, [DeliveryFun])
-  end,
-  ClientNodes),
-
-  %% Send a series of messages.
-  {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
-  
-  
-  %% Ensure each node receives a message.
-  lists:foreach(fun({_ClientName, ClientNode}) ->
-    receive
-      {delivery, ClientNode, 1} ->
-        ok;
-      {delivery, ClientNode, Message} ->
-        ct:fail("Client ~p received incorrect message: ~p", [ClientNode, Message])
-    after
-      1000 ->
-        ct:fail("Client ~p didn't receive message!", [ClientNode])
-    end
-  end, ClientNodes),
+  %% start causal delivery and stability test
+  fun_causal_test(Nodes, Manager),
 
   %% Stop nodes.
   stop(Nodes),
@@ -180,30 +113,8 @@ default_causal_test(Config) ->
                 [{partisan_peer_service_manager, Manager},
                  {clients, Clients}]),
 
-  %% Pause for clustering.
-  timer:sleep(1000),
-
-  %% Verify membership.
-  %%
-  VerifyFun = fun({_Name, Node}) ->
-    {ok, Members} = rpc:call(Node, Manager, members, []),
-
-    %% If this node is a server, it should know about all nodes.
-    SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
-    SortedMembers = lists:usort(Members) -- [Node],
-    case SortedMembers =:= SortedNodes of
-      true ->
-        ok;
-      false ->
-        ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
-    end
-  end,
-
-  %% Verify the membership is correct.
-  lists:foreach(VerifyFun, Nodes),
-
-  %% start causal delivery test
-  fun_causal_test(Nodes),
+  %% start causal delivery and stability test
+  fun_causal_test(Nodes, Manager),
 
   %% Stop nodes.
   stop(Nodes),
@@ -228,65 +139,8 @@ hyparview_causal_test(Config) ->
                  {servers, Servers},
                  {clients, Clients}]),
 
-  %% Pause for clustering.
-  timer:sleep(10000),
-
-  %% Create new digraph.
-  Graph = digraph:new(),
-
-  %% Verify connectedness.
-  %%
-  ConnectFun = fun({_, Node}) ->
-    {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
-    Active = sets:to_list(ActiveSet),
-
-    %% Add vertexes and edges.
-    [connect(Graph, Node, N) || {N, _, _} <- Active]
-  end,
-
-  %% Build the graph.
-  lists:foreach(ConnectFun, Nodes),
-
-  %% Verify connectedness.
-  ConnectedFun = fun({_Name, Node}=Myself) ->
-    lists:foreach(fun({_, N}) ->
-      Path = digraph:get_short_path(Graph, Node, N),
-        case Path of
-          false ->
-            ct:fail("Graph is not connected!");
-          _ ->
-            ok
-        end
-      end, Nodes -- [Myself])
-    end,
-
-  lists:foreach(ConnectedFun, Nodes),
-
-  %% Verify symmetry.
-  SymmetryFun = fun({_, Node1}) ->
-    %% Get first nodes active set.
-    {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
-    Active1 = sets:to_list(ActiveSet1),
-
-    lists:foreach(fun({Node2, _, _}) ->
-      %% Get second nodes active set.
-      {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
-      Active2 = sets:to_list(ActiveSet2),
-
-      case lists:member(Node1, [N || {N, _, _} <- Active2]) of
-        true ->
-          ok;
-        false ->
-          ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
-              [Node1, Node2, Node2, Node1])
-      end
-    end, Active1)
-  end,
-
-  lists:foreach(SymmetryFun, Nodes),
-
-  %% start causal delivery test
-  fun_causal_test(Nodes),
+  %% start causal delivery and stability test
+  fun_causal_test(Nodes, Manager),
 
   %% Stop nodes.
   stop(Nodes),
@@ -416,6 +270,128 @@ start(_Case, _Config, Options) ->
 
     ct:pal("Clustering nodes."),
     lists:map(fun(Node) -> cluster(Node, Nodes, Options) end, Nodes),
+
+    Manager = proplists:get_value(partisan_peer_service_manager, Options),
+
+    case Manager of
+      partisan_client_server_peer_service_manager ->
+        %% Pause for clustering.
+        timer:sleep(1000),
+
+        %% Verify membership.
+        %%
+        VerifyFun = fun({Name, Node}) ->
+          {ok, Members} = rpc:call(Node, Manager, members, []),
+
+            %% If this node is a server, it should know about all nodes.
+            SortedNodes = case lists:member(Name, Servers) of
+              true ->
+                lists:usort([N || {_, N} <- Nodes]);
+              false ->
+                %% Otherwise, it should only know about the server
+                %% and itself.
+                lists:usort(
+                  lists:map(
+                    fun(Server) ->
+                      proplists:get_value(Server, Nodes)
+                    end,
+                    Servers
+                  ) ++ [Node]
+                )
+            end,
+
+            SortedMembers = lists:usort(Members),
+            case SortedMembers =:= SortedNodes of
+              true ->
+                ok;
+              false ->
+                ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, Nodes, Members])
+            end
+        end,
+
+        %% Verify the membership is correct.
+        lists:foreach(VerifyFun, Nodes);
+      partisan_default_peer_service_manager ->
+        %% Pause for clustering.
+        timer:sleep(1000),
+
+        %% Verify membership.
+        %%
+        VerifyFun = fun({_Name, Node}) ->
+          {ok, Members} = rpc:call(Node, Manager, members, []),
+
+          %% If this node is a server, it should know about all nodes.
+          SortedNodes = lists:usort([N || {_, N} <- Nodes]) -- [Node],
+          SortedMembers = lists:usort(Members) -- [Node],
+          case SortedMembers =:= SortedNodes of
+            true ->
+              ok;
+            false ->
+              ct:fail("Membership incorrect; node ~p should have ~p but has ~p", [Node, SortedNodes, SortedMembers])
+          end
+        end,
+
+        %% Verify the membership is correct.
+        lists:foreach(VerifyFun, Nodes);
+
+      partisan_hyparview_peer_service_manager ->
+        %% Pause for clustering.
+        timer:sleep(10000),
+
+        %% Create new digraph.
+        Graph = digraph:new(),
+
+        %% Verify connectedness.
+        %%
+        ConnectFun = fun({_, Node}) ->
+          {ok, ActiveSet} = rpc:call(Node, Manager, active, []),
+          Active = sets:to_list(ActiveSet),
+
+          %% Add vertexes and edges.
+          [connect(Graph, Node, N) || {N, _, _} <- Active]
+        end,
+
+        %% Build the graph.
+        lists:foreach(ConnectFun, Nodes),
+
+        %% Verify connectedness.
+        ConnectedFun = fun({_Name, Node}=Myself) ->
+          lists:foreach(fun({_, N}) ->
+            Path = digraph:get_short_path(Graph, Node, N),
+              case Path of
+                false ->
+                  ct:fail("Graph is not connected!");
+                _ ->
+                  ok
+              end
+            end, Nodes -- [Myself])
+          end,
+
+        lists:foreach(ConnectedFun, Nodes),
+
+        %% Verify symmetry.
+        SymmetryFun = fun({_, Node1}) ->
+          %% Get first nodes active set.
+          {ok, ActiveSet1} = rpc:call(Node1, Manager, active, []),
+          Active1 = sets:to_list(ActiveSet1),
+
+          lists:foreach(fun({Node2, _, _}) ->
+            %% Get second nodes active set.
+            {ok, ActiveSet2} = rpc:call(Node2, Manager, active, []),
+            Active2 = sets:to_list(ActiveSet2),
+
+            case lists:member(Node1, [N || {N, _, _} <- Active2]) of
+              true ->
+                ok;
+              false ->
+                ct:fail("~p has ~p in it's view but ~p does not have ~p in its view",
+                    [Node1, Node2, Node2, Node1])
+            end
+          end, Active1)
+        end,
+
+        lists:foreach(SymmetryFun, Nodes)
+    end,
 
     ct:pal("Partisan fully initialized."),
 
@@ -626,37 +602,79 @@ fun_ready_to_check(Nodes) ->
       ct:fail("fun_ready_to_check :: received incorrect message: ~p", [M])
   end.
 
-fun_causal_test(Nodes) ->
-  NodeMsgInfoMap = fun_intialize_Msg_Info_Map(Nodes),
+fun_causal_test(Nodes, Manager) ->
 
-  %% Calculate the number of Messages that will be delivered by each node
-  %% result = sum of msgs sent per node * number of nodes (Broadcast)
-  TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
+  case Manager of
+    partisan_client_server_peer_service_manager ->
+      %% Get the first node in the list.
+      [{_ServerName, ServerNode} | ClientNodes] = Nodes,
 
-  Self = self(),
+      %% Configure the delivery function on each node to send the messages
+      %% back to the test runner in delivery order.
+      Self = self(),
 
-  %% Spawn a receiver process to collect all delivered msgs VVs per node
-  Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
+      %% define a delivery function that notifies the Receiver upon delivery
+      lists:foreach(fun({_ClientName, ClientNode}) ->
+        DeliveryFun = fun({_VV, Msg}) ->
+          Self ! {delivery, ClientNode, Msg},
+          ok
+        end,
+        ok = rpc:call(ClientNode,
+                      ishikawa,
+                      tcbdelivery,
+                      [DeliveryFun])
+      end,
+      ClientNodes),
 
-  %% define a delivery function that notifies the Receiver upon delivery
-  lists:foreach(fun({_Name, Node}) ->
-    DeliveryFun = fun({VV, _Msg}) ->
-      Receiver ! {delivery, Node, VV},
-      ok
-    end,
-    ok = rpc:call(Node,
-                  ishikawa,
-                  tcbdelivery,
-                  [DeliveryFun])
-  end,
-  Nodes),
+      %% Send a series of messages.
+      {ok, _} = rpc:call(ServerNode, ishikawa, tcbcast, [1]),
 
-  %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
-  lists:foreach(fun({_Name, Node}) ->
-    {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
-    spawn(?MODULE, fun_send, [Node, MsgNumToSend])
-  end, Nodes),
 
-  %% check if all messages where delivered
-  %% if ready check causal delivery order and causal stability, if not loop again
-  fun_ready_to_check(Nodes).
+      %% Ensure each node receives a message.
+      lists:foreach(fun({_ClientName, ClientNode}) ->
+        receive
+          {delivery, ClientNode, 1} ->
+            ok;
+          {delivery, ClientNode, Message} ->
+            ct:fail("Client ~p received incorrect message: ~p", [ClientNode, Message])
+        after
+          1000 ->
+            ct:fail("Client ~p didn't receive message!", [ClientNode])
+        end
+      end, ClientNodes);
+    _ ->
+
+      NodeMsgInfoMap = fun_intialize_Msg_Info_Map(Nodes),
+
+      %% Calculate the number of Messages that will be delivered by each node
+      %% result = sum of msgs sent per node * number of nodes (Broadcast)
+      TotNumMsgToRecv = lists:sum([V || {_, {V, _}} <- NodeMsgInfoMap]) * ?NODES_NUMBER,
+
+      Self = self(),
+
+      %% Spawn a receiver process to collect all delivered msgs VVs per node
+      Receiver = spawn(?MODULE, fun_receive, [NodeMsgInfoMap, Nodes, TotNumMsgToRecv, 0, Self]),
+
+      %% define a delivery function that notifies the Receiver upon delivery
+      lists:foreach(fun({_Name, Node}) ->
+        DeliveryFun = fun({VV, _Msg}) ->
+          Receiver ! {delivery, Node, VV},
+          ok
+        end,
+        ok = rpc:call(Node,
+                      ishikawa,
+                      tcbdelivery,
+                      [DeliveryFun])
+      end,
+      Nodes),
+
+      %% Sending random messages and recording on delivery the VV of the messages in delivery order per Node
+      lists:foreach(fun({_Name, Node}) ->
+        {MsgNumToSend, _} = orddict:fetch(Node, NodeMsgInfoMap),
+        spawn(?MODULE, fun_send, [Node, MsgNumToSend])
+      end, Nodes),
+
+      %% check if all messages where delivered
+      %% if ready check causal delivery order and causal stability, if not loop again
+      fun_ready_to_check(Nodes)
+    end.
