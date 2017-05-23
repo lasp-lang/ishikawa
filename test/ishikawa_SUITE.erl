@@ -69,16 +69,16 @@ end_per_testcase(Case, _Config) ->
     _Config.
 
 all() ->
-    [causal_delivery_test_client_server,
-    causal_delivery_test_default,
-    causal_delivery_test_hyparview].
+    [causal_test_client_server,
+    causal_test_default,
+    causal_test_hyparview].
 
 %% ===================================================================
 %% Tests.
 %% ===================================================================
 
-%% Not very interesting to test causal delivery with a Client/Server star topology 
-causal_delivery_test_client_server(Config) ->
+%% Not very interesting to test causal delivery and stability with a Client/Server star topology 
+causal_test_client_server(Config) ->
   %% Use the client/server peer service manager.
   Manager = partisan_client_server_peer_service_manager,
 
@@ -168,8 +168,8 @@ causal_delivery_test_client_server(Config) ->
 
   ok.
 
-%% Test with full membership
-causal_delivery_test_default(Config) ->
+%% Test causal delivery and stability with full membership
+causal_test_default(Config) ->
 
   %% Use the default peer service manager.
   Manager = partisan_default_peer_service_manager,
@@ -212,8 +212,8 @@ causal_delivery_test_default(Config) ->
 
   ok.
 
-%% Test with hyparview overlay
-causal_delivery_test_hyparview(Config) ->
+%% Test causal delivery and stability with hyparview overlay
+causal_test_hyparview(Config) ->
 
   %% Use the hyparview peer service manager.
   Manager = partisan_hyparview_peer_service_manager,
