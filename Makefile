@@ -47,7 +47,7 @@ shell:
 	${REBAR} shell --apps ishikawa
 
 logs:
-	tail -F ./_build/default/lib/partisan/priv/lager/**/log/*.log
+	tail -F priv/lager/*/log/*.log
 
 ##
 ## Release targets
