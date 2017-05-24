@@ -194,7 +194,7 @@ start(_Case, _Config, Options) ->
           Error ->
               ct:fail(Error)
       end
-     end,
+    end,
     Nodes = lists:map(InitializerFun, NodeNames),
 
     %% Load applications on all of the nodes.
@@ -274,6 +274,9 @@ start(_Case, _Config, Options) ->
 
     case Manager of
       partisan_client_server_peer_service_manager ->
+        %% Pause for clustering.    
+        timer:sleep(1000),
+
         %% Verify membership.
         %%
         VerifyFun = fun({Name, Node}) ->
@@ -308,6 +311,9 @@ start(_Case, _Config, Options) ->
         %% Verify the membership is correct.
         lists:foreach(VerifyFun, Nodes);
       partisan_default_peer_service_manager ->
+        %% Pause for clustering.    
+        timer:sleep(1000),
+
         %% Verify membership.
         %%
         VerifyFun = fun({_Name, Node}) ->
@@ -328,6 +334,9 @@ start(_Case, _Config, Options) ->
         lists:foreach(VerifyFun, Nodes);
 
       partisan_hyparview_peer_service_manager ->
+        %% Pause for clustering.    
+        timer:sleep(10000),
+
         %% Create new digraph.
         Graph = digraph:new(),
 
